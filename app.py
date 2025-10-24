@@ -523,17 +523,71 @@ async def send_signalwire_audio_to_azure(
                         logger.info(f"📊 Audio format: {media_format}")
 
                         # Add business context
-                        eastern = pytz.timezone('US/Eastern')
-                        now_e = datetime.now(eastern)
-                        is_business_hours = (
-                            now_e.weekday() < 5 and
-                            (now_e.hour > 8 or (now_e.hour == 8 and now_e.minute >= 30)) and
-                            now_e.hour < 17
-                        )
+                        # Get business hours configuration for this company
+                        business_hours_config = company_config.get('business-hours', {})
+                        timezone_str = business_hours_config.get('timezone', 'US/Eastern')
+                        business_days = business_hours_config.get('days', [0, 1, 2, 3, 4])  # 0=Monday, 6=Sunday
+                        open_time_str = business_hours_config.get('open-time', '08:30')
+                        close_time_str = business_hours_config.get('close-time', '17:00')
+
+                        logger.info(f"⚙️ Business hours config: timezone={timezone_str}, days={business_days}, open={open_time_str}, close={close_time_str}")
+
+                        # Get current time in company's timezone (convert from UTC for reliability)
+                        company_tz = pytz.timezone(timezone_str)
+                        now_utc = datetime.now(UTC)
+                        now_local = now_utc.astimezone(company_tz)
+
+                        logger.info(f"🕐 Current time - UTC: {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}, Local: {now_local.strftime('%Y-%m-%d %I:%M:%S %p %Z')}")
+
+                        # Parse open and close times
+                        open_hour, open_minute = map(int, open_time_str.split(':'))
+                        close_hour, close_minute = map(int, close_time_str.split(':'))
+
+                        current_time_minutes = now_local.hour * 60 + now_local.minute
+                        open_time_minutes = open_hour * 60 + open_minute
+                        close_time_minutes = close_hour * 60 + close_minute
+
+                        # Check if hours span midnight (overnight, e.g., 8am-2am)
+                        is_overnight = close_time_minutes < open_time_minutes
+
+                        # Determine if currently in business hours
+                        current_day = now_local.weekday()
+                        previous_day = (current_day - 1) % 7
+
+                        if is_overnight:
+                            # Overnight hours (e.g., Mon 8am - Tue 2am)
+                            # Two scenarios:
+                            # 1. Current time is after open time on a business day (Mon 8am - Mon 11:59pm)
+                            # 2. Current time is before close time and YESTERDAY was a business day (Tue 12am - Tue 2am)
+                            in_hours_today = current_day in business_days and current_time_minutes >= open_time_minutes
+                            in_hours_from_yesterday = previous_day in business_days and current_time_minutes < close_time_minutes
+                            is_business_hours = in_hours_today or in_hours_from_yesterday
+
+                            logger.info(f"📅 Overnight hours detected: open={open_time_str}, close={close_time_str}")
+                            logger.info(f"📅 Business hours check: Day={now_local.strftime('%A')} ({current_day}), Time={now_local.strftime('%H:%M')}, in_hours_today={in_hours_today}, in_hours_from_yesterday={in_hours_from_yesterday}, is_business_hours={is_business_hours}")
+                        else:
+                            # Standard hours (e.g., Mon 8am - Mon 5pm)
+                            is_business_day = current_day in business_days
+                            is_within_hours = open_time_minutes <= current_time_minutes < close_time_minutes
+                            is_business_hours = is_business_day and is_within_hours
+
+                            logger.info(f"📅 Standard hours: Day={now_local.strftime('%A')} ({current_day}), Time={now_local.strftime('%H:%M')}, is_business_day={is_business_day}, is_within_hours={is_within_hours}, is_business_hours={is_business_hours}")
                         
                         formatted_phone = caller_phone or "Unknown"
                         if caller_phone and len(caller_phone) == 12 and caller_phone.startswith('+1'):
                             formatted_phone = f"{caller_phone[:2]}-{caller_phone[2:5]}-{caller_phone[5:8]}-{caller_phone[8:]}"
+
+                        # Get timezone abbreviation for display (e.g., "EST", "PDT")
+                        tz_abbrev = now_local.strftime('%Z')
+
+                        context_text = (
+                            f"Date: {now_local.strftime('%B %d, %Y')}\n"
+                            f"Day: {now_local.strftime('%A')}\n"
+                            f"Time: {now_local.strftime('%I:%M %p')} {tz_abbrev}\n"
+                            f"{'Agents available now for warm transfer' if is_business_hours else 'Outside business hours; schedule callback'}\n"
+                            f"CallerID: {formatted_phone}\n"
+                            "When collecting a callback number, confirm the caller ID when appropriate."
+                        )
 
                         context_message = {
                             "type": "conversation.item.create",
@@ -542,17 +596,12 @@ async def send_signalwire_audio_to_azure(
                                 "role": "system",
                                 "content": [{
                                     "type": "input_text",
-                                    "text": (
-                                        f"Date: {now_e.strftime('%B %d, %Y')}\n"
-                                        f"Day: {now_e.strftime('%A')}\n"
-                                        f"Time: {now_e.strftime('%I:%M %p')} Eastern\n"
-                                        f"{'Agents available now for warm transfer' if is_business_hours else 'Outside business hours; schedule callback'}\n"
-                                        f"CallerID: {formatted_phone}\n"
-                                        "When collecting a callback number, confirm the caller ID when appropriate."
-                                    )
+                                    "text": context_text
                                 }]
                             }
                         }
+
+                        logger.info(f"📤 Sending context to model:\n{context_text}")
                         await azure_ws.send(json.dumps(context_message))
                         logger.info("✅ Sent call context to model")
 
