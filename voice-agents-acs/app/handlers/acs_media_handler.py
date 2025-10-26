@@ -358,19 +358,23 @@ IMPORTANT CONTEXT:
     async def _send_audio_to_caller(self, audio_b64: str):
         """Send AI audio back to the caller via ACS WebSocket"""
         if self.incoming_websocket:
-            if self.is_raw_audio:
-                # Web client expects raw audio
-                audio_bytes = base64.b64decode(audio_b64)
-                await self.incoming_websocket.send(audio_bytes)
-            else:
-                # ACS expects JSON-wrapped base64 audio
-                acs_message = {
-                    "kind": "AudioData",
-                    "audioData": audio_b64,
-                    "audioFormat": "Pcm16K",
-                    "participantRawID": "bot"
-                }
-                await self.incoming_websocket.send(json.dumps(acs_message))
+            try:
+                if self.is_raw_audio:
+                    # Web client expects raw audio
+                    audio_bytes = base64.b64decode(audio_b64)
+                    logger.debug(f"📤 Sending {len(audio_bytes)} bytes to web client")
+                    await self.incoming_websocket.send(audio_bytes)
+                else:
+                    # ACS expects JSON-wrapped base64 audio
+                    acs_message = {
+                        "kind": "AudioData",
+                        "audioData": audio_b64,
+                        "audioFormat": "Pcm16K",
+                        "participantRawID": "bot"
+                    }
+                    await self.incoming_websocket.send(json.dumps(acs_message))
+            except Exception as e:
+                logger.exception(f"❌ Error sending audio to caller: {e}")
 
     async def audio_to_voicelive(self, audio_b64: str):
         """Queue audio data to be sent to Voice Live API"""
