@@ -462,6 +462,11 @@ CRITICAL INSTRUCTIONS:
 
     async def audio_to_voicelive(self, audio_b64: str):
         """Queue audio data to be sent to Voice Live API"""
+        # Don't send user audio during initial greeting - prevents Voice Live from suppressing audio generation
+        if self.first_response:
+            logger.debug("⏭️ Buffering user audio during initial greeting (not sending to Voice Live)")
+            return
+
         await self.send_queue.put(
             json.dumps({"type": "input_audio_buffer.append", "audio": audio_b64})
         )
