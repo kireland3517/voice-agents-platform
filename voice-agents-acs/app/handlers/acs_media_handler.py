@@ -148,14 +148,18 @@ CRITICAL INSTRUCTIONS:
 
         # Get voice configuration
         voice_config = company_config.get('voice-config', {})
-        voice_name = voice_config.get('name', 'en-US-Aria:DragonHDLatestNeural')
+        voice_name = voice_config.get('name', 'alloy')  # Default to OpenAI alloy voice
         voice_temperature = voice_config.get('temperature', 0.8)
 
-        # Get audio settings
+        # Determine if this is an OpenAI voice or Azure voice
+        openai_voices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
+        is_openai_voice = voice_name in openai_voices
+
+        # Get audio settings - use sample code defaults
         audio_settings = company_config.get('audio-settings', {})
-        vad_threshold = audio_settings.get('vad-threshold', 0.3)
-        silence_duration_ms = audio_settings.get('vad-silence-duration-ms', 200)
-        prefix_padding_ms = audio_settings.get('vad-prefix-padding-ms', 200)
+        vad_threshold = audio_settings.get('vad-threshold', 0.5)  # Match sample: 0.5
+        silence_duration_ms = audio_settings.get('vad-silence-duration-ms', 500)  # Match sample: 500
+        prefix_padding_ms = audio_settings.get('vad-prefix-padding-ms', 300)  # Match sample: 300
 
         # Store VAD configuration for re-enabling after greeting
         self.vad_config = {
@@ -165,6 +169,17 @@ CRITICAL INSTRUCTIONS:
             "silence_duration_ms": silence_duration_ms,
             "remove_filler_words": False,
         }
+
+        # Build voice configuration (OpenAI voices are just strings, Azure voices are objects)
+        if is_openai_voice:
+            voice_config_obj = voice_name  # OpenAI voices: just the string
+        else:
+            # Azure voice - remove any style suffix (e.g., :DragonHDLatestNeural)
+            clean_voice_name = voice_name.split(':')[0]
+            voice_config_obj = {
+                "name": clean_voice_name,
+                "type": "azure-standard",
+            }
 
         # Build session configuration
         session_config = {
@@ -181,11 +196,8 @@ CRITICAL INSTRUCTIONS:
                 },
                 "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
                 "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
-                "voice": {
-                    "name": voice_name,
-                    "type": "azure-standard",
-                    "temperature": voice_temperature,
-                },
+                "voice": voice_config_obj,
+                "temperature": voice_temperature,
                 "input_audio_transcription": {
                     "model": "whisper-1"
                 },
