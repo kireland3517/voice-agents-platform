@@ -165,14 +165,18 @@
 
         async function startConversation() {
             try {
+                console.log('🚀 Starting conversation...');
                 updateStatus('🟡 Connecting...', 'connecting');
                 startBtn.disabled = true;
 
                 // Get microphone access
+                console.log('🎤 Requesting microphone access...');
                 mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                console.log('✅ Microphone access granted');
 
                 // Create audio context
                 audioContext = new AudioContext({ sampleRate: 24000 });
+                console.log('🔊 AudioContext created, state:', audioContext.state, 'sample rate:', audioContext.sampleRate);
                 const source = audioContext.createMediaStreamSource(mediaStream);
 
                 // Create processor for capturing audio
@@ -187,31 +191,46 @@
 
                 source.connect(processor);
                 processor.connect(audioContext.destination);
+                console.log('🎙️ Audio pipeline connected');
 
                 // Connect to WebSocket
                 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
                 const wsUrl = `${protocol}//${window.location.host}/web/ws`;
+                console.log('🔌 Connecting to WebSocket:', wsUrl);
                 websocket = new WebSocket(wsUrl);
 
                 websocket.onopen = () => {
+                    console.log('✅ WebSocket connected');
                     updateStatus('🟢 Connected - Speak now!', 'connected');
                     startBtn.style.display = 'none';
                     stopBtn.style.display = 'block';
                 };
 
-                websocket.onmessage = (event) => {
-                    // Play received audio from AI
-                    if (event.data instanceof Blob) {
-                        event.data.arrayBuffer().then(buffer => playAudio(buffer));
+                websocket.onmessage = async (event) => {
+                    console.log('📥 Received message, type:', event.data.constructor.name, 'size:', event.data.byteLength || event.data.size);
+
+                    // Handle raw PCM audio from AI
+                    try {
+                        if (event.data instanceof ArrayBuffer) {
+                            await playAudio(event.data);
+                        } else if (event.data instanceof Blob) {
+                            const arrayBuffer = await event.data.arrayBuffer();
+                            await playAudio(arrayBuffer);
+                        } else {
+                            console.warn('⚠️ Unexpected message type:', typeof event.data);
+                        }
+                    } catch (error) {
+                        console.error('❌ Error playing audio:', error);
                     }
                 };
 
                 websocket.onerror = (error) => {
-                    console.error('WebSocket error:', error);
+                    console.error('❌ WebSocket error:', error);
                     updateStatus('🔴 Connection Error', 'disconnected');
                 };
 
-                websocket.onclose = () => {
+                websocket.onclose = (event) => {
+                    console.log('🔌 WebSocket closed, code:', event.code, 'reason:', event.reason);
                     updateStatus('🔴 Disconnected', 'disconnected');
                     cleanup();
                 };
@@ -261,12 +280,42 @@
         }
 
         async function playAudio(arrayBuffer) {
-            if (!audioContext) return;
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            const source = audioContext.createBufferSource();
-            source.buffer = audioBuffer;
-            source.connect(audioContext.destination);
-            source.start();
+            if (!audioContext) {
+                console.warn('⚠️ No audio context available');
+                return;
+            }
+
+            try {
+                console.log('🔊 Playing audio chunk, size:', arrayBuffer.byteLength, 'bytes');
+
+                // Resume audio context if suspended (browser autoplay policy)
+                if (audioContext.state === 'suspended') {
+                    console.log('▶️ Resuming audio context...');
+                    await audioContext.resume();
+                }
+
+                // Convert raw PCM16 to Float32 for Web Audio API
+                const pcm16 = new Int16Array(arrayBuffer);
+                const float32 = new Float32Array(pcm16.length);
+
+                for (let i = 0; i < pcm16.length; i++) {
+                    float32[i] = pcm16[i] / 32768.0;  // Convert Int16 to Float32 range [-1, 1]
+                }
+
+                // Create audio buffer with the same sample rate as our AudioContext (24kHz)
+                const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
+                audioBuffer.getChannelData(0).set(float32);
+
+                // Play the audio
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(audioContext.destination);
+                source.start();
+
+                console.log('✅ Audio playing, duration:', audioBuffer.duration.toFixed(2), 'seconds');
+            } catch (error) {
+                console.error('❌ Failed to play audio:', error);
+            }
         }
 
         startBtn.addEventListener('click', startConversation);
