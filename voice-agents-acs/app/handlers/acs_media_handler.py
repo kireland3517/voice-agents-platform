@@ -197,6 +197,11 @@ CRITICAL INSTRUCTIONS:
         logger.info(f"🎵 Audio formats: input=pcm16, output=pcm16, sample_rate=24kHz")
 
         await self._send_json(session_config)
+        # Clear any buffered user audio that accumulated during connection setup
+        # This prevents Voice Live from thinking the user is speaking when we request the greeting
+        await self._send_json({
+            "type": "input_audio_buffer.clear"
+        })
         # Temporarily disable turn detection for initial greeting
         # This prevents microphone noise from interrupting the greeting
         await self._send_json({
@@ -213,7 +218,7 @@ CRITICAL INSTRUCTIONS:
             }
         })
 
-        logger.info("✅ Session configuration sent - initial greeting requested (VAD disabled)")
+        logger.info("✅ Session configuration sent - initial greeting requested (audio buffer cleared, VAD disabled)")
 
     async def _send_json(self, obj):
         """Send a JSON object to Voice Live API"""
