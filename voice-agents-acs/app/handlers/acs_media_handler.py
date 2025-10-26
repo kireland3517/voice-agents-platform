@@ -134,6 +134,11 @@ IMPORTANT CONTEXT:
 - Always verify surnames using the database when collecting customer information
 - Confirm city/state when customer provides ZIP code
 - Collect complete information: first name, last name, phone, email, ZIP, address, DOB
+
+CRITICAL INSTRUCTIONS:
+- NEVER use special tokens, markers, or placeholders like "<|audio_text|>" in your responses
+- Always speak naturally using complete words and sentences
+- If you need to respond but are uncertain what to say, ask a clarifying question instead
 """
 
         # Get voice configuration
