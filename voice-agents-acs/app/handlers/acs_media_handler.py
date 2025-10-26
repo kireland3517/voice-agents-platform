@@ -158,11 +158,6 @@ IMPORTANT CONTEXT:
                     "prefix_padding_ms": prefix_padding_ms,
                     "silence_duration_ms": silence_duration_ms,
                     "remove_filler_words": False,
-                    "end_of_utterance_detection": {
-                        "model": "semantic_detection_v1",
-                        "threshold": 0.01,
-                        "timeout": 2,
-                    },
                 },
                 "input_audio_noise_reduction": {"type": "azure_deep_noise_suppression"},
                 "input_audio_echo_cancellation": {"type": "server_echo_cancellation"},
