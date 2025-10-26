@@ -56,6 +56,9 @@ class ACSMediaHandler:
         self.skip_current_audio = False  # Skip audio when <|audio_text|> detected
         self.first_response = True  # Allow first response to play even if audio-only (for greeting)
 
+        # Store VAD configuration for re-enabling after greeting
+        self.vad_config = None
+
         logger.info("✅ ACS Media Handler initialized")
 
     def _generate_guid(self):
@@ -154,6 +157,15 @@ CRITICAL INSTRUCTIONS:
         silence_duration_ms = audio_settings.get('vad-silence-duration-ms', 200)
         prefix_padding_ms = audio_settings.get('vad-prefix-padding-ms', 200)
 
+        # Store VAD configuration for re-enabling after greeting
+        self.vad_config = {
+            "type": "azure_semantic_vad",
+            "threshold": vad_threshold,
+            "prefix_padding_ms": prefix_padding_ms,
+            "silence_duration_ms": silence_duration_ms,
+            "remove_filler_words": False,
+        }
+
         # Build session configuration
         session_config = {
             "type": "session.update",
@@ -185,6 +197,14 @@ CRITICAL INSTRUCTIONS:
         logger.info(f"🎵 Audio formats: input=pcm16, output=pcm16, sample_rate=24kHz")
 
         await self._send_json(session_config)
+        # Temporarily disable turn detection for initial greeting
+        # This prevents microphone noise from interrupting the greeting
+        await self._send_json({
+            "type": "session.update",
+            "session": {
+                "turn_detection": None  # Disable VAD temporarily
+            }
+        })
         # Request initial greeting with explicit text+audio modalities
         await self._send_json({
             "type": "response.create",
@@ -193,7 +213,7 @@ CRITICAL INSTRUCTIONS:
             }
         })
 
-        logger.info("✅ Session configuration sent - initial greeting requested")
+        logger.info("✅ Session configuration sent - initial greeting requested (VAD disabled)")
 
     async def _send_json(self, obj):
         """Send a JSON object to Voice Live API"""
@@ -280,10 +300,19 @@ CRITICAL INSTRUCTIONS:
                     logger.debug(f"🎵 Audio-only response (no transcript)")
                 # Reset skip flag after response completes
                 self.skip_current_audio = False
-                # After first response completes, enable audio-text filtering
+                # After first response completes, enable audio-text filtering and re-enable VAD
                 if self.first_response:
                     self.first_response = False
                     logger.debug(f"✅ First response complete - audio-text filtering now active")
+                    # Re-enable turn detection for subsequent conversation
+                    if self.vad_config:
+                        await self._send_json({
+                            "type": "session.update",
+                            "session": {
+                                "turn_detection": self.vad_config
+                            }
+                        })
+                        logger.info("🎤 Turn detection re-enabled for conversation")
 
             case "response.audio.delta":
                 # Stream AI audio back to caller
