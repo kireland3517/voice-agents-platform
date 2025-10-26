@@ -246,12 +246,18 @@ IMPORTANT CONTEXT:
 
             case "response.audio_transcript.delta":
                 delta = event.get("delta", "")
-                self.session.add_assistant_partial(delta)
+                # Filter out audio-only marker tokens
+                if delta and "<|audio_text|>" not in delta:
+                    self.session.add_assistant_partial(delta)
 
             case "response.audio_transcript.done":
                 transcript = event.get("transcript", "")
-                logger.info(f"🤖 Assistant: {transcript}")
-                self.session.add_transcript("assistant", transcript)
+                # Filter out audio-only marker (Voice Live uses this for speech without text)
+                if transcript and transcript.strip() != "<|audio_text|>":
+                    logger.info(f"🤖 Assistant: {transcript}")
+                    self.session.add_transcript("assistant", transcript)
+                else:
+                    logger.debug(f"🎵 Audio-only response (no transcript)")
 
             case "response.audio.delta":
                 # Stream AI audio back to caller
