@@ -53,7 +53,6 @@ class ACSMediaHandler:
         # State tracking for custom features
         self.listening_for_surname = False
         self.listening_for_zipcode = False
-        self.skip_current_audio = False  # Flag to skip audio chunks with markers
 
         logger.info("✅ ACS Media Handler initialized")
 
@@ -184,7 +183,13 @@ CRITICAL INSTRUCTIONS:
         logger.info(f"🎵 Audio formats: input=pcm16, output=pcm16, sample_rate=24kHz")
 
         await self._send_json(session_config)
-        await self._send_json({"type": "response.create"})
+        # Request initial response with explicit text+audio modalities
+        await self._send_json({
+            "type": "response.create",
+            "response": {
+                "modalities": ["text", "audio"]
+            }
+        })
 
         logger.info("✅ Session configuration sent")
 
@@ -253,11 +258,8 @@ CRITICAL INSTRUCTIONS:
 
             case "response.audio_transcript.delta":
                 delta = event.get("delta", "")
-                # Detect audio-only marker token and set flag to skip audio
-                if delta and "<|audio_text|>" in delta:
-                    self.skip_current_audio = True
-                    logger.debug(f"🚫 Detected <|audio_text|> marker, will skip audio for this response")
-                elif delta:
+                # Filter out audio-only marker tokens from transcript
+                if delta and "<|audio_text|>" not in delta:
                     self.session.add_assistant_partial(delta)
 
             case "response.audio_transcript.done":
@@ -268,21 +270,15 @@ CRITICAL INSTRUCTIONS:
                     self.session.add_transcript("assistant", transcript)
                 else:
                     logger.debug(f"🎵 Audio-only response (no transcript)")
-                # Reset skip flag for next response
-                self.skip_current_audio = False
 
             case "response.audio.delta":
                 # Stream AI audio back to caller
                 audio_b64 = event.get("delta", "")
                 if audio_b64 and self.incoming_websocket:
-                    # Skip audio if this is part of an audio-text marker response
-                    if not self.skip_current_audio:
-                        # Debug: log audio chunk info
-                        audio_bytes = base64.b64decode(audio_b64)
-                        logger.debug(f"🎵 Audio chunk: {len(audio_bytes)} bytes, first 16 bytes: {audio_bytes[:16].hex()}")
-                        await self._send_audio_to_caller(audio_b64)
-                    else:
-                        logger.debug(f"⏭️ Skipping audio chunk (audio_text marker detected)")
+                    # Debug: log audio chunk info
+                    audio_bytes = base64.b64decode(audio_b64)
+                    logger.debug(f"🎵 Audio chunk: {len(audio_bytes)} bytes, first 16 bytes: {audio_bytes[:16].hex()}")
+                    await self._send_audio_to_caller(audio_b64)
 
             case "conversation.item.input_audio_transcription.failed":
                 error_msg = event.get("error")
@@ -324,8 +320,13 @@ CRITICAL INSTRUCTIONS:
                 }
             })
 
-            # Trigger response
-            await self._send_json({"type": "response.create"})
+            # Trigger response with explicit text+audio modalities
+            await self._send_json({
+                "type": "response.create",
+                "response": {
+                    "modalities": ["text", "audio"]
+                }
+            })
 
             # Reset listening flag
             self.listening_for_surname = False
@@ -365,7 +366,12 @@ CRITICAL INSTRUCTIONS:
                         }
                     })
 
-                    await self._send_json({"type": "response.create"})
+                    await self._send_json({
+                        "type": "response.create",
+                        "response": {
+                            "modalities": ["text", "audio"]
+                        }
+                    })
 
                 # Reset listening flag
                 self.listening_for_zipcode = False
