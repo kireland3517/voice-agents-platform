@@ -53,6 +53,7 @@ class ACSMediaHandler:
         # State tracking for custom features
         self.listening_for_surname = False
         self.listening_for_zipcode = False
+        self.skip_current_audio = False  # Skip audio when <|audio_text|> detected
 
         logger.info("✅ ACS Media Handler initialized")
 
@@ -258,8 +259,11 @@ CRITICAL INSTRUCTIONS:
 
             case "response.audio_transcript.delta":
                 delta = event.get("delta", "")
-                # Filter out audio-only marker tokens from transcript
-                if delta and "<|audio_text|>" not in delta:
+                # Detect and skip audio-only responses
+                if delta and "<|audio_text|>" in delta:
+                    self.skip_current_audio = True
+                    logger.info(f"🚫 Audio-text marker detected - will skip audio playback for this response")
+                elif delta:
                     self.session.add_assistant_partial(delta)
 
             case "response.audio_transcript.done":
@@ -270,15 +274,21 @@ CRITICAL INSTRUCTIONS:
                     self.session.add_transcript("assistant", transcript)
                 else:
                     logger.debug(f"🎵 Audio-only response (no transcript)")
+                # Reset skip flag after response completes
+                self.skip_current_audio = False
 
             case "response.audio.delta":
                 # Stream AI audio back to caller
                 audio_b64 = event.get("delta", "")
                 if audio_b64 and self.incoming_websocket:
-                    # Debug: log audio chunk info
-                    audio_bytes = base64.b64decode(audio_b64)
-                    logger.debug(f"🎵 Audio chunk: {len(audio_bytes)} bytes, first 16 bytes: {audio_bytes[:16].hex()}")
-                    await self._send_audio_to_caller(audio_b64)
+                    if self.skip_current_audio:
+                        # Skip audio chunks that contain audio-text markers
+                        logger.debug(f"⏭️ Skipping audio chunk (audio-text marker response)")
+                    else:
+                        # Send normal audio
+                        audio_bytes = base64.b64decode(audio_b64)
+                        logger.debug(f"🎵 Audio chunk: {len(audio_bytes)} bytes, first 16 bytes: {audio_bytes[:16].hex()}")
+                        await self._send_audio_to_caller(audio_b64)
 
             case "conversation.item.input_audio_transcription.failed":
                 error_msg = event.get("error")
