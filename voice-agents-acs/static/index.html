@@ -305,12 +305,19 @@
 
                 // Try to interpret as PCM16
                 const pcm16 = new Int16Array(arrayBuffer);
-                console.log('📊 PCM16 samples:', pcm16.length, 'first sample:', pcm16[0], 'max:', Math.max(...pcm16.slice(0, 100)));
+                const maxSample = Math.max(...pcm16.map(Math.abs));
+                console.log('📊 PCM16 samples:', pcm16.length, 'first sample:', pcm16[0], 'max:', maxSample);
 
+                // Apply gain to boost quiet audio (Voice Live API sends very low amplitude audio)
+                const GAIN = 8.0;  // Amplify by 8x
                 const float32 = new Float32Array(pcm16.length);
                 for (let i = 0; i < pcm16.length; i++) {
-                    float32[i] = pcm16[i] / 32768.0;  // Convert Int16 to Float32 range [-1, 1]
+                    let sample = (pcm16[i] / 32768.0) * GAIN;
+                    // Clamp to prevent distortion
+                    sample = Math.max(-1.0, Math.min(1.0, sample));
+                    float32[i] = sample;
                 }
+                console.log('🔊 Applied gain:', GAIN, 'x, max amplitude:', Math.max(...float32.map(Math.abs)).toFixed(3));
 
                 // Create audio buffer with 24kHz sample rate (matching Voice Live API output)
                 const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
