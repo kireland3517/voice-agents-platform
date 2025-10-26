@@ -152,6 +152,7 @@ IMPORTANT CONTEXT:
             "type": "session.update",
             "session": {
                 "instructions": system_instructions,
+                "modalities": ["text", "audio"],  # Ensure both text and audio outputs
                 "turn_detection": {
                     "type": "azure_semantic_vad",
                     "threshold": vad_threshold,
