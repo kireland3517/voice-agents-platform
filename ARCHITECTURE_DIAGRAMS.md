@@ -283,7 +283,7 @@ flowchart TD
 flowchart TD
     Start([Session configuration<br/>loading]) --> GetConfig[Get business-hours config<br/>from Azure App Configuration]
 
-    GetConfig --> ParseConfig[Parse configuration:<br/>- timezone: 'US/Eastern'<br/>- days: [0,1,2,3,4] Mon-Fri<br/>- open: '08:30'<br/>- close: '17:00']
+    GetConfig --> ParseConfig[Parse configuration:<br/>timezone, days, open/close times]
 
     ParseConfig --> GetTime[Get current time<br/>in business timezone<br/>using pytz]
 
@@ -291,15 +291,15 @@ flowchart TD
 
     ParseTimes --> CheckOvernight{close time <<br/>open time?}
 
-    CheckOvernight -->|No: Standard Hours| StandardCheck[Check:<br/>1. Is today a business day?<br/>2. Is time between open-close?]
+    CheckOvernight -->|No: Standard Hours| StandardCheck[Check:<br/>Is business day + within hours?]
 
-    CheckOvernight -->|Yes: Overnight Hours| OvernightCheck[Check:<br/>1. After open today AND business day?<br/>2. Before close today AND yesterday was business day?]
+    CheckOvernight -->|Yes: Overnight Hours| OvernightCheck[Check:<br/>After open OR before close<br/>from yesterday?]
 
     StandardCheck --> IsOpen{Currently in<br/>business hours?}
     OvernightCheck --> IsOpen
 
-    IsOpen -->|Yes - OPEN| OpenPrompt[Inject prompt:<br/>'Status: OPEN<br/>You can transfer to agent']
-    IsOpen -->|No - CLOSED| ClosedPrompt[Inject prompt:<br/>'Status: CLOSED<br/>Do NOT offer transfer<br/>Offer callback instead']
+    IsOpen -->|Yes - OPEN| OpenPrompt[Inject prompt:<br/>Status: OPEN<br/>Can transfer to agent]
+    IsOpen -->|No - CLOSED| ClosedPrompt[Inject prompt:<br/>Status: CLOSED<br/>Offer callback only]
 
     OpenPrompt --> AddToSession[Add to Voice Live<br/>session instructions]
     ClosedPrompt --> AddToSession
@@ -469,7 +469,7 @@ graph TB
     subgraph "Azure Storage & Config"
         ACR[Container Registry<br/>voiceagentsacr]
         AppConfig[App Configuration<br/>Company Configs]
-        BlobStorage[Blob Storage<br/>- Instructions<br/>- Data (surnames.db)<br/>- Recordings<br/>- Transcripts]
+        BlobStorage[Blob Storage<br/>Instructions, Data,<br/>Recordings, Transcripts]
     end
 
     subgraph "Azure Monitoring"
