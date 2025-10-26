@@ -279,6 +279,11 @@
             return int16Array.buffer;
         }
 
+        // Audio queue for smooth playback
+        let audioQueue = [];
+        let isPlaying = false;
+        let nextStartTime = 0;
+
         async function playAudio(arrayBuffer) {
             if (!audioContext) {
                 console.warn('⚠️ No audio context available');
@@ -286,7 +291,7 @@
             }
 
             try {
-                console.log('🔊 Playing audio chunk, size:', arrayBuffer.byteLength, 'bytes');
+                console.log('🔊 Received audio chunk, size:', arrayBuffer.byteLength, 'bytes');
 
                 // Resume audio context if suspended (browser autoplay policy)
                 if (audioContext.state === 'suspended') {
@@ -294,28 +299,59 @@
                     await audioContext.resume();
                 }
 
-                // Convert raw PCM16 to Float32 for Web Audio API
-                const pcm16 = new Int16Array(arrayBuffer);
-                const float32 = new Float32Array(pcm16.length);
+                // Inspect first few bytes to understand format
+                const firstBytes = new Uint8Array(arrayBuffer.slice(0, 16));
+                console.log('📊 First 16 bytes:', Array.from(firstBytes).map(b => b.toString(16).padStart(2, '0')).join(' '));
 
+                // Try to interpret as PCM16
+                const pcm16 = new Int16Array(arrayBuffer);
+                console.log('📊 PCM16 samples:', pcm16.length, 'first sample:', pcm16[0], 'max:', Math.max(...pcm16.slice(0, 100)));
+
+                const float32 = new Float32Array(pcm16.length);
                 for (let i = 0; i < pcm16.length; i++) {
                     float32[i] = pcm16[i] / 32768.0;  // Convert Int16 to Float32 range [-1, 1]
                 }
 
-                // Create audio buffer with the same sample rate as our AudioContext (24kHz)
+                // Create audio buffer with 24kHz sample rate (matching Voice Live API output)
                 const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
                 audioBuffer.getChannelData(0).set(float32);
 
-                // Play the audio
-                const source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(audioContext.destination);
-                source.start();
+                // Queue for playback
+                audioQueue.push(audioBuffer);
+                if (!isPlaying) {
+                    playNextInQueue();
+                }
 
-                console.log('✅ Audio playing, duration:', audioBuffer.duration.toFixed(2), 'seconds');
+                console.log('✅ Audio chunk queued, duration:', audioBuffer.duration.toFixed(3), 'seconds');
             } catch (error) {
-                console.error('❌ Failed to play audio:', error);
+                console.error('❌ Failed to process audio:', error);
+                console.error('Error stack:', error.stack);
             }
+        }
+
+        function playNextInQueue() {
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                nextStartTime = 0;
+                return;
+            }
+
+            isPlaying = true;
+            const audioBuffer = audioQueue.shift();
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+
+            const currentTime = audioContext.currentTime;
+            const startTime = Math.max(currentTime, nextStartTime);
+            source.start(startTime);
+            nextStartTime = startTime + audioBuffer.duration;
+
+            console.log('▶️ Playing audio at', startTime.toFixed(3), 's, duration:', audioBuffer.duration.toFixed(3), 's');
+
+            source.onended = () => {
+                playNextInQueue();
+            };
         }
 
         startBtn.addEventListener('click', startConversation);
