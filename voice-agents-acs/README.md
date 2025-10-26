@@ -293,18 +293,34 @@ voice-agents-acs/
 Reuses existing configuration structure:
 
 - `senior-life/basic-info` - Company name, greeting, industry
-- `senior-life/voice-config` - Voice name, temperature, style
+- `senior-life/voice-config` - Voice name, temperature (minimum 0.6), style
+  - Example: `{"name": "alloy", "temperature": 0.8}` (OpenAI voice)
+  - Example: `{"name": "en-US-AvaNeural", "temperature": 0.8}` (Azure voice)
 - `senior-life/business-hours` - Timezone, days, open/close times
 - `senior-life/contact-info` - Phone, email for agent reference
-- `senior-life/audio-settings` - VAD threshold, silence duration
+- `senior-life/audio-settings` - VAD threshold (default 0.5), silence duration (default 500ms), prefix padding (default 300ms)
 - `senior-life/business-rules` - Transfer policies, callback rules
+
+**Important:** Voice Live API requires `temperature >= 0.6`. Code automatically corrects lower values.
 
 ### Azure Blob Storage Containers
 
 - `agent-instructions` - Detailed system prompts per company
-- `agent-data` - surnames.db (7MB database)
-- `call-recordings` - Audio WAV files
-- `call-transcripts` - JSON transcripts
+  - **File format:** `{company-id}-instructions.txt` (e.g., `senior-life-instructions.txt`)
+  - **This is the ONLY source** for detailed instructions - App Config keys are not used
+  - Update this file and restart service to reload instructions
+- `agent-data` - surnames.db (800KB database, 162K surnames)
+  - Automatically downloaded on service startup if not present locally
+- `call-recordings` - Audio WAV files (if recording enabled)
+- `call-transcripts` - JSON transcripts (if recording enabled)
+
+### Audio Configuration
+
+Voice Live API outputs **24kHz PCM16** audio:
+- ACS clients: `audioFormat: "Pcm24K"`
+- Web clients: `AudioContext({ sampleRate: 24000 })`
+
+**Do NOT use 16kHz** - causes audio crackling/distortion
 
 ---
 
@@ -320,7 +336,131 @@ Reuses existing configuration structure:
 
 ---
 
+## 🔧 Recent Fixes & Improvements
+
+### ✅ Audio Crackling Fix (Oct 26, 2025)
+**Issue:** Audio was crackly/distorted during Cedar's responses
+
+**Cause:** Sample rate mismatch - Voice Live outputs 24kHz PCM16, but we were telling ACS clients it was 16kHz
+
+**Fix:** Changed `audioFormat` from `"Pcm16K"` to `"Pcm24K"` in `acs_media_handler.py:473`
+
+**Result:** Crystal clear audio playback
+
+### ✅ Caller ID Integration (Oct 26, 2025)
+**Issue:** Cedar couldn't use caller ID from phone network
+
+**Cause:** Caller ID wasn't being extracted and passed to the AI
+
+**Fix:**
+- Extract caller ID from ACS callback query parameters (`server.py:147`)
+- Pass through WebSocket to media handler (`acs_media_handler.py:63,71-84`)
+- Inject into system instructions (`acs_media_handler.py:138-141`)
+
+**Result:** Cedar can now say "Is it okay to reach you at [number]?" instead of asking
+
+### ✅ JSON Output Prevention (Oct 26, 2025)
+**Issue:** Cedar would output JSON like `{"zipcode":"22124"}` instead of speaking
+
+**Cause:** System instructions didn't explicitly forbid structured output
+
+**Fix:** Added explicit instruction: "NEVER output JSON, structured data, code, or special formatting"
+
+**Result:** Cedar speaks naturally without JSON artifacts
+
+### ✅ Immediate Confirmation Prevention (Oct 26, 2025)
+**Issue:** Cedar would repeat back each piece of info immediately (phone, surname, etc.)
+
+**Cause:** Instructions weren't clear about when to confirm
+
+**Fix:** Added instructions:
+- "Collect ALL information first, THEN confirm everything together at the end"
+- "Do NOT repeat back information customer just told you - wait until final confirmation"
+
+**Result:** Natural conversation flow - collect all, then confirm once
+
+### ✅ Temperature Validation (Oct 26, 2025)
+**Issue:** Voice Live API rejected temperature values below 0.6
+
+**Cause:** No validation of minimum temperature requirement
+
+**Fix:** Added validation in `acs_media_handler.py:154-157` to enforce minimum 0.6
+
+**Result:** Automatic correction of invalid temperature values
+
+### ✅ Voice Configuration Format (Oct 26, 2025)
+**Issue:** Using wrong voice format caused errors
+
+**Cause:** Confusion between OpenAI vs Azure voice formats
+
+**Fix:**
+- OpenAI voices (alloy, echo, etc.): string format `"alloy"`
+- Azure voices: object format `{"name": "en-US-AvaNeural", "type": "azure-standard"}`
+- Auto-detect and format correctly
+
+**Result:** Proper voice configuration for both types
+
+### ✅ VAD Settings Optimization (Oct 26, 2025)
+**Issue:** False speech detection causing silent pauses
+
+**Cause:** VAD too sensitive (threshold 0.3, timing 200ms)
+
+**Fix:** Updated to Azure sample defaults:
+- Threshold: 0.3 → 0.5 (less sensitive)
+- Silence duration: 200ms → 500ms
+- Prefix padding: 200ms → 300ms
+
+**Result:** Reduced false positives, more reliable speech detection
+
+---
+
 ## 🆘 Troubleshooting
+
+### Issue: Audio sounds crackly or distorted
+
+**Cause:** Sample rate mismatch or browser audio issues
+
+**Check:**
+1. Voice Live outputs 24kHz - ensure `audioFormat: "Pcm24K"` for ACS
+2. Web client should use `sampleRate: 24000` in AudioContext
+3. Test on real phone call vs browser to isolate issue
+
+**Fix:**
+```javascript
+// Web client (static/index.html)
+audioContext = new AudioContext({ sampleRate: 24000 });
+const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
+```
+
+### Issue: Cedar outputs JSON instead of speaking
+
+**Symptom:** Silence after user provides info, logs show `{"zipcode":"22124"}` in text response
+
+**Cause:** System instructions being interpreted as data structure requests
+
+**Fix:** Ensure blob instructions don't ask for JSON/structured output. System automatically adds:
+```
+NEVER output JSON, structured data, code, or special formatting
+```
+
+### Issue: Temperature validation error "below minimum value"
+
+**Error:** `Invalid 'session.temperature': decimal below minimum value. Expected >= 0.6`
+
+**Cause:** Voice Live API requires temperature >= 0.6
+
+**Fix:** Update Azure App Config `senior-life/voice-config` temperature to 0.6 or higher
+- Code automatically corrects values below 0.6
+- Restart service to apply changes
+
+### Issue: Caller ID not working
+
+**Check:**
+1. ACS is capturing caller ID (check logs: "👤 Caller ID: ...")
+2. Caller ID being passed to WebSocket (check logs: "🔌 ACS WebSocket connection initiated (Caller ID: ...)")
+3. System instructions include caller ID context
+
+**Fix:** Caller ID should flow automatically if ACS provides it. Check ACS phone number configuration supports caller ID.
 
 ### Issue: surnames.db not downloading
 
@@ -328,6 +468,7 @@ Reuses existing configuration structure:
 1. Blob storage connection string is correct
 2. `agent-data` container exists
 3. `surnames.db` file is uploaded to blob
+4. Check startup logs for download status
 
 **Fix:**
 ```bash
@@ -339,6 +480,19 @@ az storage blob upload \
     --file path/to/surnames.db \
     --connection-string "YOUR_CONNECTION_STRING"
 ```
+
+### Issue: Instructions not loading or outdated
+
+**Check:**
+1. File exists: `agent-instructions/senior-life-instructions.txt` (or `{company-id}-instructions.txt`)
+2. Azure Blob Storage connection is valid
+3. Check startup logs: "Successfully loaded detailed instructions for senior-life"
+
+**Note:** The App Config key `senior-life/detailed-instructions` is NOT used - only the blob storage file
+
+**Fix:**
+1. Update blob storage file: `agent-instructions/senior-life-instructions.txt`
+2. Restart service to reload instructions
 
 ### Issue: Event Grid webhook validation fails
 
@@ -356,6 +510,7 @@ az storage blob upload \
 2. Model deployment name is correct (`gpt-realtime-mini`)
 3. API key is valid
 4. Region supports Voice Live API (try Sweden Central)
+5. Temperature is >= 0.6
 
 ---
 
