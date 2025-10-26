@@ -54,6 +54,7 @@ class ACSMediaHandler:
         self.listening_for_surname = False
         self.listening_for_zipcode = False
         self.skip_current_audio = False  # Skip audio when <|audio_text|> detected
+        self.first_response = True  # Allow first response to play even if audio-only (for greeting)
 
         logger.info("✅ ACS Media Handler initialized")
 
@@ -184,7 +185,7 @@ CRITICAL INSTRUCTIONS:
         logger.info(f"🎵 Audio formats: input=pcm16, output=pcm16, sample_rate=24kHz")
 
         await self._send_json(session_config)
-        # Request initial response with explicit text+audio modalities
+        # Request initial greeting with explicit text+audio modalities
         await self._send_json({
             "type": "response.create",
             "response": {
@@ -192,7 +193,7 @@ CRITICAL INSTRUCTIONS:
             }
         })
 
-        logger.info("✅ Session configuration sent")
+        logger.info("✅ Session configuration sent - initial greeting requested")
 
     async def _send_json(self, obj):
         """Send a JSON object to Voice Live API"""
@@ -259,10 +260,13 @@ CRITICAL INSTRUCTIONS:
 
             case "response.audio_transcript.delta":
                 delta = event.get("delta", "")
-                # Detect and skip audio-only responses
+                # Detect and skip audio-only responses (except the first one for greeting)
                 if delta and "<|audio_text|>" in delta:
-                    self.skip_current_audio = True
-                    logger.info(f"🚫 Audio-text marker detected - will skip audio playback for this response")
+                    if not self.first_response:
+                        self.skip_current_audio = True
+                        logger.info(f"🚫 Audio-text marker detected - will skip audio playback for this response")
+                    else:
+                        logger.info(f"ℹ️ Audio-text marker in first response - allowing greeting to play")
                 elif delta:
                     self.session.add_assistant_partial(delta)
 
@@ -276,6 +280,10 @@ CRITICAL INSTRUCTIONS:
                     logger.debug(f"🎵 Audio-only response (no transcript)")
                 # Reset skip flag after response completes
                 self.skip_current_audio = False
+                # After first response completes, enable audio-text filtering
+                if self.first_response:
+                    self.first_response = False
+                    logger.debug(f"✅ First response complete - audio-text filtering now active")
 
             case "response.audio.delta":
                 # Stream AI audio back to caller
