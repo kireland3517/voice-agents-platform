@@ -169,8 +169,12 @@ IMPORTANT CONTEXT:
                 "input_audio_transcription": {
                     "model": "whisper-1"
                 },
+                "input_audio_format": "pcm16",
+                "output_audio_format": "pcm16",
             },
         }
+
+        logger.info(f"🎵 Audio formats: input=pcm16, output=pcm16, sample_rate=24kHz")
 
         await self._send_json(session_config)
         await self._send_json({"type": "response.create"})
@@ -253,6 +257,9 @@ IMPORTANT CONTEXT:
                 # Stream AI audio back to caller
                 audio_b64 = event.get("delta", "")
                 if audio_b64 and self.incoming_websocket:
+                    # Debug: log audio chunk info
+                    audio_bytes = base64.b64decode(audio_b64)
+                    logger.debug(f"🎵 Audio chunk: {len(audio_bytes)} bytes, first 16 bytes: {audio_bytes[:16].hex()}")
                     await self._send_audio_to_caller(audio_b64)
 
             case "conversation.item.input_audio_transcription.failed":
