@@ -151,6 +151,11 @@ CRITICAL INSTRUCTIONS:
         voice_name = voice_config.get('name', 'alloy')  # Default to OpenAI alloy voice
         voice_temperature = voice_config.get('temperature', 0.8)
 
+        # Voice Live requires temperature >= 0.6
+        if voice_temperature < 0.6:
+            logger.warning(f"⚠️ Temperature {voice_temperature} is below minimum 0.6, using 0.6")
+            voice_temperature = 0.6
+
         # Determine if this is an OpenAI voice or Azure voice
         openai_voices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
         is_openai_voice = voice_name in openai_voices
