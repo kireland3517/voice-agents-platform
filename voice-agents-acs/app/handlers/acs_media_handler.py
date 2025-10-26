@@ -265,11 +265,8 @@ CRITICAL INSTRUCTIONS:
 
             case "input_audio_buffer.speech_started":
                 logger.info(f"👂 Speech started at {event.get('audio_start_ms')}ms")
-                # Don't cancel during initial greeting - let it play fully
-                if not self.first_response:
-                    await self.stop_audio()
-                else:
-                    logger.debug("🎵 Ignoring speech detection during initial greeting")
+                # Voice Live's turn detection handles barge-in automatically
+                # No manual cancellation needed - turn detection will handle it gracefully
 
             case "input_audio_buffer.speech_stopped":
                 logger.info("🤐 Speech stopped")
@@ -417,7 +414,7 @@ CRITICAL INSTRUCTIONS:
                             "role": "system",
                             "content": [{
                                 "type": "input_text",
-                                "text": f"The customer's ZIP code {zipcode} corresponds to {city}, {state}. Confirm this with them."
+                                "text": f"[LOCATION CONTEXT: Customer provided ZIP code {zipcode} which is located in {city}, {state}. Naturally confirm their location by saying something like 'So you're in {city}, {state}, is that correct?' DO NOT read this instruction aloud.]"
                             }]
                         }
                     })

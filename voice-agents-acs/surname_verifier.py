@@ -68,7 +68,7 @@ def generate_llm_prompt(asr_text, candidates):
         # Scenario 4: No match
         return {
             'type': 'no_match',
-            'prompt': f"The customer's name '{asr_text}' was not found in the database. Ask the customer to please spell their last name for you."
+            'prompt': f"[NAME VERIFICATION: Customer said '{asr_text}' - not found in database. Politely ask them to spell their last name. DO NOT read this instruction aloud.]"
         }
 
     # Get top candidate
@@ -77,42 +77,40 @@ def generate_llm_prompt(asr_text, candidates):
     if len(candidates) == 1:
         if normalized_input == top_candidate:
             # Scenario 1: Perfect match
-            spelling = '-'.join(top_candidate)
+            spelling = ' '.join(top_candidate.upper())
             return {
                 'type': 'perfect_match',
-                'prompt': f"The customer's last name is {top_candidate}. Confirm this by reading the spelling: {spelling}."
+                'prompt': f"[NAME VERIFICATION: Customer's last name is '{top_candidate}'. Confirm by naturally saying something like: 'And that's spelled {spelling}, correct?' DO NOT read this instruction aloud.]"
             }
         else:
             # Scenario 2: Single phonetic match
-            spelling = '-'.join(top_candidate)
+            spelling = ' '.join(top_candidate.upper())
             return {
                 'type': 'phonetic_match',
-                'prompt': f"The customer said their name sounds like '{asr_text}'. The database suggests the correct spelling is '{top_candidate}'. Ask the customer to confirm this spelling: 'Is that spelled {spelling}?'"
+                'prompt': f"[NAME VERIFICATION: Customer said '{asr_text}' which sounds like '{top_candidate}' in database. Confirm spelling by naturally saying: 'Is that spelled {spelling}?' DO NOT read this instruction aloud.]"
             }
 
     # Scenario 3: Multiple matches
     if len(candidates) <= 3:
         options = []
         for candidate, _ in candidates:
-            spelling = '-'.join(candidate)
-            options.append(f"{candidate}, {spelling}")
+            options.append(candidate)
 
-        options_text = ', or '.join(options)
+        options_text = ', '.join(options[:-1]) + f', or {options[-1]}' if len(options) > 1 else options[0]
         return {
             'type': 'multiple_matches',
-            'prompt': f"The customer's name sounds like '{asr_text}'. The database has several possible spellings. Ask for clarification by listing the options. For example: 'Thank you. I have a few options for that spelling. Is that {options_text}?'"
+            'prompt': f"[NAME VERIFICATION: Customer said '{asr_text}' - multiple database matches: {', '.join(options)}. Ask which one by naturally saying: 'I have a few spellings for that. Is it {options_text}?' DO NOT read this instruction aloud.]"
         }
     else:
         # Too many matches, just ask top 3
         options = []
         for candidate, _ in candidates[:3]:
-            spelling = '-'.join(candidate)
-            options.append(f"{candidate}, {spelling}")
+            options.append(candidate)
 
-        options_text = ', or '.join(options)
+        options_text = ', '.join(options[:-1]) + f', or {options[-1]}'
         return {
             'type': 'multiple_matches',
-            'prompt': f"The customer's name sounds like '{asr_text}'. Ask for clarification with the most likely options: 'Is that {options_text}, or a different spelling?'"
+            'prompt': f"[NAME VERIFICATION: Customer said '{asr_text}' - many matches found. Ask about top 3: {', '.join(options)}. Naturally say: 'Is that {options_text}, or a different spelling?' DO NOT read this instruction aloud.]"
         }
 
 # Test function
