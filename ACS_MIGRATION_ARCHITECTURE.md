@@ -4,6 +4,17 @@
 **Migration Type:** Complete rebuild from SignalWire to Azure Communication Services
 **Runtime:** Python (Quart framework)
 
+> 📊 **Visual Diagrams:** See [ARCHITECTURE_DIAGRAMS.md](ARCHITECTURE_DIAGRAMS.md) for comprehensive Mermaid diagrams including:
+> - Overall system architecture
+> - Call initiation sequence
+> - Active call audio flow
+> - Surname verification flow
+> - ZIP code lookup flow
+> - Business hours logic
+> - Call termination sequence
+> - Component interaction map
+> - Deployment architecture
+
 ---
 
 ## 🎯 Migration Overview
