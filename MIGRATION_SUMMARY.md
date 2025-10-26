@@ -12,12 +12,20 @@
 
 1. **ACS_MIGRATION_ARCHITECTURE.md**
    - Complete architecture design
-   - Data flow diagrams
+   - Data flow descriptions
    - Feature integration details
    - Cost comparison analysis
    - Success criteria
 
-2. **AZURE_SETUP_GUIDE.md**
+2. **ARCHITECTURE_DIAGRAMS.md** ⭐ NEW
+   - 9 comprehensive Mermaid diagrams
+   - Visual system architecture
+   - Sequence diagrams for call flows
+   - Flowcharts for business logic
+   - Component interaction maps
+   - Deployment architecture
+
+3. **AZURE_SETUP_GUIDE.md**
    - Step-by-step resource creation
    - PowerShell, CLI, and Portal instructions
    - Phone number acquisition guide
@@ -216,10 +224,11 @@ Before going live, verify:
 
 | Document | Purpose | When to Use |
 |----------|---------|-------------|
-| **ACS_MIGRATION_ARCHITECTURE.md** | Understand the new architecture | Before deployment |
+| **MIGRATION_SUMMARY.md** | This file - complete overview | Start here! |
+| **ARCHITECTURE_DIAGRAMS.md** | Visual diagrams (9 Mermaid diagrams) | For visual learners |
+| **ACS_MIGRATION_ARCHITECTURE.md** | Detailed architecture & design | Before deployment |
 | **AZURE_SETUP_GUIDE.md** | Create Azure resources | First step |
 | **voice-agents-acs/README.md** | Deploy and test application | During deployment |
-| **MIGRATION_SUMMARY.md** | This file - overview | Start here! |
 
 ---
 
