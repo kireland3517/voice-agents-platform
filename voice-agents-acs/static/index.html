@@ -310,14 +310,17 @@
 
                 // Apply smart normalization to boost quiet audio without clipping
                 // Voice Live API sends low amplitude audio, so we normalize each chunk
-                const TARGET_AMPLITUDE = 0.7;  // Target 70% of max to avoid clipping
+                const TARGET_AMPLITUDE = 0.5;  // Target 50% of max to avoid clipping/crackling
                 const MIN_PEAK = 1000;  // Don't amplify near-silence chunks
+                const MAX_GAIN = 3.0;  // Limit maximum gain to prevent over-amplification
 
                 const float32 = new Float32Array(pcm16.length);
 
                 if (maxSample > MIN_PEAK) {
                     // Calculate gain to reach target amplitude
-                    const gain = (TARGET_AMPLITUDE * 32768) / maxSample;
+                    let gain = (TARGET_AMPLITUDE * 32768) / maxSample;
+                    // Limit gain to prevent excessive amplification
+                    gain = Math.min(gain, MAX_GAIN);
                     console.log('🔊 Normalizing audio: peak =', maxSample, ', gain =', gain.toFixed(2) + 'x');
 
                     for (let i = 0; i < pcm16.length; i++) {
