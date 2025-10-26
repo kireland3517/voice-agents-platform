@@ -308,16 +308,28 @@
                 const maxSample = Math.max(...pcm16.map(Math.abs));
                 console.log('📊 PCM16 samples:', pcm16.length, 'first sample:', pcm16[0], 'max:', maxSample);
 
-                // Apply gain to boost quiet audio (Voice Live API sends very low amplitude audio)
-                const GAIN = 8.0;  // Amplify by 8x
+                // Apply smart normalization to boost quiet audio without clipping
+                // Voice Live API sends low amplitude audio, so we normalize each chunk
+                const TARGET_AMPLITUDE = 0.7;  // Target 70% of max to avoid clipping
+                const MIN_PEAK = 1000;  // Don't amplify near-silence chunks
+
                 const float32 = new Float32Array(pcm16.length);
-                for (let i = 0; i < pcm16.length; i++) {
-                    let sample = (pcm16[i] / 32768.0) * GAIN;
-                    // Clamp to prevent distortion
-                    sample = Math.max(-1.0, Math.min(1.0, sample));
-                    float32[i] = sample;
+
+                if (maxSample > MIN_PEAK) {
+                    // Calculate gain to reach target amplitude
+                    const gain = (TARGET_AMPLITUDE * 32768) / maxSample;
+                    console.log('🔊 Normalizing audio: peak =', maxSample, ', gain =', gain.toFixed(2) + 'x');
+
+                    for (let i = 0; i < pcm16.length; i++) {
+                        float32[i] = (pcm16[i] / 32768.0) * gain;
+                    }
+                } else {
+                    // Near silence - just convert without gain
+                    console.log('🔇 Near silence chunk, skipping gain');
+                    for (let i = 0; i < pcm16.length; i++) {
+                        float32[i] = pcm16[i] / 32768.0;
+                    }
                 }
-                console.log('🔊 Applied gain:', GAIN, 'x, max amplitude:', Math.max(...float32.map(Math.abs)).toFixed(3));
 
                 // Create audio buffer with 24kHz sample rate (matching Voice Live API output)
                 const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
