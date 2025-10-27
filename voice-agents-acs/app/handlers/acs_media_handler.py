@@ -504,7 +504,14 @@ CRITICAL INSTRUCTIONS:
         try:
             data = json.loads(msg)
             if data.get("kind") == "AudioData":
-                audio_b64 = data.get("audioData", "")
+                audio_data = data.get("audioData", "")
+                # ACS sends audioData as an object with {timestamp, data, silent} fields
+                # Extract the actual audio data string
+                if isinstance(audio_data, dict):
+                    audio_b64 = audio_data.get("data", "")
+                else:
+                    audio_b64 = audio_data
+
                 if audio_b64:
                     await self.audio_to_voicelive(audio_b64)
         except Exception as e:
