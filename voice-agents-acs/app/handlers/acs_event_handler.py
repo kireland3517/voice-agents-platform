@@ -93,7 +93,7 @@ class AcsEventHandler:
                 # Build WebSocket URL for media streaming
                 parsed_url = urlparse(callback_events_uri)
                 websocket_url = urlunparse(
-                    ("wss", parsed_url.netloc, "/acs/ws", "", "", "")
+                    ("wss", parsed_url.netloc, "/acs/ws", "", query_parameters, "")
                 )
 
                 logger.info(f"🔗 Callback URL: {callback_uri}")
