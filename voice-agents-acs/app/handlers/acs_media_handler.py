@@ -298,6 +298,17 @@ CRITICAL INSTRUCTIONS:
                 session_id = event.get("session", {}).get("id")
                 logger.info(f"🎤 Voice Live Session ID: {session_id}")
 
+            case "session.updated":
+                session = event.get("session", {})
+                modalities = session.get("modalities", [])
+                output_format = session.get("output_audio_format", "unknown")
+                logger.info(f"✅ Session updated: modalities={modalities}, output_audio_format={output_format}")
+
+            case "response.created":
+                response = event.get("response", {})
+                response_id = response.get("id")
+                logger.info(f"📝 Response created: id={response_id}")
+
             case "input_audio_buffer.speech_started":
                 logger.info(f"👂 Speech started at {event.get('audio_start_ms')}ms")
                 # Voice Live's turn detection handles barge-in automatically
