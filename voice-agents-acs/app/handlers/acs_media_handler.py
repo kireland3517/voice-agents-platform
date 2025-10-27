@@ -222,11 +222,10 @@ CRITICAL INSTRUCTIONS:
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
                 "input_audio_sampling_rate": 24000,
-                "output_audio_sampling_rate": 24000,
             },
         }
 
-        logger.info(f"🎵 Audio formats: input=pcm16@24kHz, output=pcm16@24kHz")
+        logger.info(f"🎵 Audio formats: input=pcm16@24kHz, output=pcm16")
 
         await self._send_json(session_config)
         # Clear any buffered user audio that accumulated during connection setup
