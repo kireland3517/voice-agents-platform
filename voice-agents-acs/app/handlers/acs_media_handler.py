@@ -280,13 +280,8 @@ CRITICAL INSTRUCTIONS:
                 event = json.loads(message)
                 event_type = event.get("type")
 
-                # Log events
-                if event_type not in ["input_audio_buffer.committed"]:
-                    # Log all response events at INFO level for debugging
-                    if event_type.startswith("response."):
-                        logger.info(f"📢 Voice Live Event: {event_type}")
-                    elif event_type != "response.audio.delta":
-                        logger.debug(f"Voice Live Event: {event_type}")
+                # Log ALL events to diagnose audio generation
+                logger.info(f"🔵 Voice Live Event: {event_type}")
 
                 # Handle different event types
                 await self._handle_voice_live_event(event_type, event)
