@@ -93,6 +93,7 @@ async def index():
 
 
 @app.route("/health", methods=["GET"])
+@app.route("/healthz", methods=["GET"])
 async def health_check():
     """Health check endpoint"""
     return {
