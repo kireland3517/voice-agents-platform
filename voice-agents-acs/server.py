@@ -143,7 +143,7 @@ async def acs_websocket():
     This handles the bidirectional audio streaming.
     """
     # Extract caller ID from query parameters (passed from callback URL)
-    caller_id = request.args.get('callerId', None)
+    caller_id = websocket.args.get('callerId', None)
     logger.info(f"🔌 ACS WebSocket connection initiated (Caller ID: {caller_id})")
 
     try:
