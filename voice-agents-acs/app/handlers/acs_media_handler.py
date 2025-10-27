@@ -59,24 +59,29 @@ class ACSMediaHandler:
         # Store VAD configuration for re-enabling after greeting
         self.vad_config = None
 
+        # Store caller information
+        self.caller_id = None
+
         logger.info("✅ ACS Media Handler initialized")
 
     def _generate_guid(self):
         """Generate a unique GUID for request tracking"""
         return str(uuid.uuid4())
 
-    async def init_incoming_websocket(self, socket, is_raw_audio=True):
+    async def init_incoming_websocket(self, socket, is_raw_audio=True, caller_id=None):
         """
         Initialize the incoming WebSocket connection (from ACS or web client)
 
         Args:
             socket: WebSocket connection
             is_raw_audio: True for web client (raw PCM), False for ACS (base64)
+            caller_id: Phone number of the caller (if available)
         """
         self.incoming_websocket = socket
         self.is_raw_audio = is_raw_audio
+        self.caller_id = caller_id
         self.session = CallSession(self.company_id)
-        logger.info(f"🔌 Incoming WebSocket initialized (raw_audio={is_raw_audio})")
+        logger.info(f"🔌 Incoming WebSocket initialized (raw_audio={is_raw_audio}, caller_id={caller_id})")
 
     async def connect(self):
         """Connect to Azure Voice Live API via WebSocket"""
@@ -130,10 +135,15 @@ class ACSMediaHandler:
         # Add business hours context
         business_hours_context = await get_business_hours_context(company_config)
 
+        # Add caller ID context if available
+        caller_id_context = ""
+        if self.caller_id:
+            caller_id_context = f"\nCALLER ID: {self.caller_id}\n- If the customer provides a phone number, check if it matches this caller ID\n- If it matches, say: 'Is it okay to reach you at {self.caller_id}?' (do NOT repeat the number they just gave)\n- If different or uncertain, ask: 'What's the best phone number to reach you at?'\n"
+
         # Build system instructions
         system_instructions = f"""{detailed_instructions}
 
-{business_hours_context}
+{business_hours_context}{caller_id_context}
 
 IMPORTANT CONTEXT:
 - Always verify surnames using the database when collecting customer information
@@ -145,6 +155,7 @@ CRITICAL INSTRUCTIONS:
 - Always speak naturally using complete words and sentences
 - IMPORTANT: Collect ALL information first (name, phone, email, ZIP, address, DOB), THEN confirm everything together at the end
 - Do NOT confirm each piece of information immediately after collecting it
+- Do NOT repeat back information the customer just told you - wait until final confirmation
 - If you need to respond but are uncertain what to say, ask a clarifying question instead
 """
 
