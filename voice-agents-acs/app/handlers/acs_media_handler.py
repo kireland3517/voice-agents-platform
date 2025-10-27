@@ -226,10 +226,11 @@ CRITICAL INSTRUCTIONS:
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
                 "input_audio_sampling_rate": 24000,
+                "output_audio_sampling_rate": 16000,
             },
         }
 
-        logger.info(f"🎵 Audio formats: input=pcm16@24kHz, output=pcm16")
+        logger.info(f"🎵 Audio formats: input=pcm16@24kHz, output=pcm16@16kHz")
 
         await self._send_json(session_config)
         # Clear any buffered user audio that accumulated during connection setup
@@ -510,11 +511,11 @@ CRITICAL INSTRUCTIONS:
                     await self.incoming_websocket.send(audio_bytes)
                 else:
                     # ACS expects JSON-wrapped base64 audio
-                    # Voice Live outputs 24kHz PCM16, so we must specify Pcm24K to match
+                    # Voice Live outputs 16kHz PCM16, so we must specify Pcm16K to match
                     acs_message = {
                         "kind": "AudioData",
                         "audioData": audio_b64,
-                        "audioFormat": "Pcm24K",
+                        "audioFormat": "Pcm16K",
                         "participantRawID": "bot"
                     }
                     await self.incoming_websocket.send(json.dumps(acs_message))
