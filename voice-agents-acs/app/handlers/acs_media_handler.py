@@ -276,8 +276,12 @@ CRITICAL INSTRUCTIONS:
                 event_type = event.get("type")
 
                 # Log events
-                if event_type not in ["response.audio.delta", "input_audio_buffer.committed"]:
-                    logger.debug(f"Voice Live Event: {event_type}")
+                if event_type not in ["input_audio_buffer.committed"]:
+                    # Log all response events at INFO level for debugging
+                    if event_type.startswith("response."):
+                        logger.info(f"📢 Voice Live Event: {event_type}")
+                    elif event_type != "response.audio.delta":
+                        logger.debug(f"Voice Live Event: {event_type}")
 
                 # Handle different event types
                 await self._handle_voice_live_event(event_type, event)
@@ -362,6 +366,23 @@ CRITICAL INSTRUCTIONS:
                         audio_bytes = base64.b64decode(audio_b64)
                         logger.info(f"🎵 Sending audio chunk: {len(audio_bytes)} bytes")
                         await self._send_audio_to_caller(audio_b64)
+
+            case "response.done":
+                # Log response completion details to diagnose audio generation
+                response = event.get("response", {})
+                output = response.get("output", [])
+                logger.info(f"📋 Response done: {len(output)} output items")
+                for i, item in enumerate(output):
+                    item_type = item.get("type")
+                    content = item.get("content", [])
+                    logger.info(f"  Item {i}: type={item_type}, content_parts={len(content)}")
+                    for j, part in enumerate(content):
+                        part_type = part.get("type")
+                        if part_type == "audio":
+                            transcript = part.get("transcript", "")
+                            logger.info(f"    Part {j}: audio (transcript: {transcript[:50]}...)")
+                        else:
+                            logger.info(f"    Part {j}: {part_type}")
 
             case "conversation.item.input_audio_transcription.failed":
                 error_msg = event.get("error")
