@@ -360,7 +360,7 @@ CRITICAL INSTRUCTIONS:
                     else:
                         # Send normal audio
                         audio_bytes = base64.b64decode(audio_b64)
-                        logger.debug(f"🎵 Audio chunk: {len(audio_bytes)} bytes, first 16 bytes: {audio_bytes[:16].hex()}")
+                        logger.info(f"🎵 Sending audio chunk: {len(audio_bytes)} bytes")
                         await self._send_audio_to_caller(audio_b64)
 
             case "conversation.item.input_audio_transcription.failed":
