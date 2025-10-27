@@ -275,6 +275,7 @@ CRITICAL INSTRUCTIONS:
         Handle incoming events from Voice Live API.
         This is where we integrate surname verification and other custom logic.
         """
+        logger.info("🟢 Receiver loop started")
         try:
             async for message in self.voice_live_ws:
                 event = json.loads(message)
@@ -287,7 +288,7 @@ CRITICAL INSTRUCTIONS:
                 await self._handle_voice_live_event(event_type, event)
 
         except Exception as e:
-            logger.exception(f"❌ Receiver loop error: {e}")
+            logger.exception(f"❌ Receiver loop crashed: {e}")
 
     async def _handle_voice_live_event(self, event_type: str, event: dict):
         """Handle specific Voice Live API events"""
