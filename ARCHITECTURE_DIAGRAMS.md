@@ -2,6 +2,15 @@
 
 This document contains visual Mermaid diagrams illustrating the system architecture and data flows for the ACS + Voice Live API migration.
 
+**Last Updated:** October 26, 2025
+
+**Recent Updates:**
+- ✅ Added Caller ID flow (ACS → WebSocket → Instructions)
+- ✅ Updated configuration loading with temperature validation (>= 0.6)
+- ✅ Updated VAD settings (0.5 threshold, 500ms silence, 300ms padding)
+- ✅ Clarified 24kHz audio format throughout pipeline
+- ✅ Noted blob storage as single source for instructions
+
 ---
 
 ## 1. Overall System Architecture
@@ -103,23 +112,27 @@ sequenceDiagram
 
     rect rgb(200, 230, 255)
         Note over ACS,EventGrid: Event Grid Integration
-        ACS->>EventGrid: IncomingCall event
-        EventGrid->>App: POST /acs/incomingcall
+        ACS->>EventGrid: IncomingCall event<br/>(includes caller ID)
+        EventGrid->>App: POST /acs/incomingcall<br/>(caller phone number)
+        Note right of App: Extract caller ID:<br/>+18335551234
     end
 
     rect rgb(255, 230, 200)
         Note over App,Blob: Configuration Loading
         App->>AppConfig: Get company config<br/>(senior-life/*)
-        AppConfig-->>App: Voice settings, business rules, etc.
+        AppConfig-->>App: Voice settings (temp >= 0.6),<br/>business rules, VAD (0.5/500/300)
+        Note right of App: Validate temperature:<br/>Auto-correct if < 0.6
         App->>Blob: Get detailed instructions<br/>(senior-life-instructions.txt)
         Blob-->>App: System prompt content
+        Note right of App: ONLY source for<br/>detailed instructions
         App->>Blob: Download surnames.db<br/>(if not cached)
-        Blob-->>App: 7MB database file
+        Blob-->>App: 800KB database file
     end
 
     rect rgb(200, 255, 200)
         Note over App,ACS: Answer Call with Media Streaming
-        App->>ACS: Answer call<br/>+ MediaStreamingOptions<br/>(WebSocket URL, PCM24K)
+        App->>ACS: Answer call<br/>+ MediaStreamingOptions<br/>(WebSocket URL + caller ID param, PCM24K)
+        Note right of App: Pass caller ID via<br/>query parameter
         ACS-->>App: CallConnected event<br/>+ Connection ID
     end
 
@@ -127,9 +140,10 @@ sequenceDiagram
         Note over App,VoiceLive: Establish Voice Live Connection
         App->>VoiceLive: WebSocket connect<br/>(wss://foundry.services.ai.azure.com)
         VoiceLive-->>App: Session created
-        App->>VoiceLive: session.update<br/>(instructions, voice, VAD settings)
-        App->>VoiceLive: response.create<br/>(trigger greeting)
-        VoiceLive-->>App: Audio stream (greeting)
+        App->>VoiceLive: session.update<br/>(instructions + caller ID context,<br/>voice config, VAD 0.5/500/300, temp >= 0.6)
+        Note right of App: Inject caller ID into<br/>system instructions
+        App->>VoiceLive: response.create<br/>(trigger greeting with text+audio)
+        VoiceLive-->>App: Audio stream (greeting)<br/>24kHz PCM16
     end
 
     App->>ACS: Forward AI audio

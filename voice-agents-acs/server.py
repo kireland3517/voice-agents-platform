@@ -143,11 +143,13 @@ async def acs_websocket():
     WebSocket endpoint for ACS to stream audio to Voice Live API.
     This handles the bidirectional audio streaming.
     """
-    logger.info("🔌 ACS WebSocket connection initiated")
+    # Extract caller ID from query parameters (passed from callback URL)
+    caller_id = request.args.get('callerId', None)
+    logger.info(f"🔌 ACS WebSocket connection initiated (Caller ID: {caller_id})")
 
     try:
         handler = ACSMediaHandler(app.config)
-        await handler.init_incoming_websocket(websocket, is_raw_audio=False)
+        await handler.init_incoming_websocket(websocket, is_raw_audio=False, caller_id=caller_id)
 
         # Connect to Voice Live API
         asyncio.create_task(handler.connect())
