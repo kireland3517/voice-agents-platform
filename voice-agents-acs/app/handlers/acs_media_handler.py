@@ -363,13 +363,17 @@ CRITICAL INSTRUCTIONS:
                     self.first_response = False
                     logger.debug(f"✅ First response complete - audio-text filtering now active")
                     # Re-enable turn detection for subsequent conversation
+                    # IMPORTANT: Only send turn_detection config, NOT audio format params
+                    # Audio format params can ONLY be set in initial session.update
                     if self.vad_config:
-                        await self._send_json({
+                        turn_detection_update = {
                             "type": "session.update",
                             "session": {
                                 "turn_detection": self.vad_config
                             }
-                        })
+                        }
+                        logger.debug(f"🔧 Sending turn detection re-enable: {turn_detection_update}")
+                        await self._send_json(turn_detection_update)
                         logger.info("🎤 Turn detection re-enabled for conversation")
 
             case "response.audio.delta":
