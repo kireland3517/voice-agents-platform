@@ -7,7 +7,6 @@ import logging
 import os
 
 from quart import Quart, request, websocket
-from quart_cors import cors
 from dotenv import load_dotenv
 
 from app.handlers.acs_event_handler import AcsEventHandler
@@ -18,7 +17,6 @@ load_dotenv()
 
 # Initialize Quart app
 app = Quart(__name__, static_folder='static')
-app = cors(app, allow_origin="*")
 
 # Configure logging
 logging.basicConfig(
