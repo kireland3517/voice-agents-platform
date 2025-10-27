@@ -220,13 +220,12 @@ CRITICAL INSTRUCTIONS:
                     "model": "whisper-1"
                 },
                 "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
-                "input_audio_sampling_rate": 24000,  # 24kHz for ACS compatibility
-                "output_audio_sampling_rate": 24000,  # 24kHz for ACS compatibility
+                "output_audio_format": "pcm16",  # Defaults to 24kHz per API spec
+                "input_audio_sampling_rate": 24000,  # Explicit 24kHz for ACS compatibility
             },
         }
 
-        logger.info(f"🎵 Audio formats: input=pcm16, output=pcm16, sample_rate=24kHz (input/output both 24000Hz)")
+        logger.info(f"🎵 Audio formats: input=pcm16@24kHz, output=pcm16@24kHz (default)")
 
         await self._send_json(session_config)
         # Clear any buffered user audio that accumulated during connection setup
