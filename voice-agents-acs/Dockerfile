@@ -20,5 +20,5 @@ RUN mkdir -p data
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["python", "server.py"]
+# Run the application with Hypercorn for WebSocket support
+CMD ["hypercorn", "server:app", "--bind", "0.0.0.0:8000", "--websocket-ping-interval", "20"]
