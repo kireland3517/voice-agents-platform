@@ -188,15 +188,19 @@ CRITICAL INSTRUCTIONS:
             "remove_filler_words": False,
         }
 
-        # Build voice configuration (OpenAI voices are just strings, Azure voices are objects)
+        # Build voice configuration
         if is_openai_voice:
-            voice_config_obj = voice_name  # OpenAI voices: just the string
+            # OpenAI voices need type and name fields per Voice Live API spec
+            voice_config_obj = {
+                "type": "openai",
+                "name": voice_name
+            }
         else:
             # Azure voice - remove any style suffix (e.g., :DragonHDLatestNeural)
             clean_voice_name = voice_name.split(':')[0]
             voice_config_obj = {
-                "name": clean_voice_name,
                 "type": "azure-standard",
+                "name": clean_voice_name
             }
 
         # Build session configuration
