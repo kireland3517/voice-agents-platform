@@ -270,7 +270,7 @@ async def create_azure_websocket_connection(company_instructions, voice_name, au
                 "type": "server_vad",
                 "threshold": 0.3,              # Lower = more sensitive to interruptions
                 "prefix_padding_ms": 200,      # Less padding = faster interruption detection
-                "silence_duration_ms": 400,    # Shorter silence = quicker turn-end detection
+                "silence_duration_ms": 800,    
             },
             "temperature": float(audio_settings.get("temperature", 0.6)),
             "max_response_output_tokens": int(audio_settings.get("max-response-tokens", 2048)),
