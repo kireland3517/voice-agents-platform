@@ -516,11 +516,11 @@ CRITICAL INSTRUCTIONS:
                     await self.incoming_websocket.send(audio_bytes)
                 else:
                     # ACS expects JSON-wrapped base64 audio
-                    # Voice Live outputs 16kHz PCM16, so we must specify Pcm16K to match
+                    # Voice Live outputs 24kHz PCM16, so we must specify Pcm24K to match
                     acs_message = {
                         "kind": "AudioData",
                         "audioData": audio_b64,
-                        "audioFormat": "Pcm16K",
+                        "audioFormat": "Pcm24K",
                         "participantRawID": "bot"
                     }
                     await self.incoming_websocket.send(json.dumps(acs_message))
