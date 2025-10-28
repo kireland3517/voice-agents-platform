@@ -225,12 +225,12 @@ CRITICAL INSTRUCTIONS:
                 },
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
-                "input_audio_sampling_rate": 16000,
+                "input_audio_sampling_rate": 24000,
             },
         }
 
-        logger.info(f"🎵 Audio formats: input=pcm16@16kHz, output=pcm16@16kHz")
-
+        logger.info(f"🎵 Audio formats: input=pcm16@24kHz, output=pcm16@16kHz")
+        
         await self._send_json(session_config)
         # Clear any buffered user audio that accumulated during connection setup
         # This prevents Voice Live from thinking the user is speaking when we request the greeting
@@ -277,6 +277,10 @@ CRITICAL INSTRUCTIONS:
         """
         logger.info("🟢 Receiver loop started")
         try:
+            if self.voice_live_ws is None:
+                logger.error("❌ Voice Live WebSocket is not connected")
+                return
+                
             async for message in self.voice_live_ws:
                 event = json.loads(message)
                 event_type = event.get("type")
@@ -320,14 +324,15 @@ CRITICAL INSTRUCTIONS:
             case "conversation.item.input_audio_transcription.completed":
                 transcript = event.get("transcript")
                 logger.info(f"👤 User: {transcript}")
-                self.session.add_transcript("user", transcript)
+                if self.session and transcript:
+                    self.session.add_transcript("user", transcript)
 
                 # Surname verification trigger
-                if self.surname_service and self.listening_for_surname:
+                if self.surname_service and self.listening_for_surname and transcript:
                     await self._verify_surname(transcript)
 
                 # ZIP code lookup trigger
-                if self.listening_for_zipcode:
+                if self.listening_for_zipcode and transcript:
                     await self._lookup_zipcode(transcript)
 
             case "response.audio_transcript.delta":
@@ -339,7 +344,7 @@ CRITICAL INSTRUCTIONS:
                         logger.info(f"🚫 Audio-text marker detected - will skip audio playback for this response")
                     else:
                         logger.info(f"ℹ️ Audio-text marker in first response - allowing greeting to play")
-                elif delta:
+                elif delta and self.session:
                     self.session.add_assistant_partial(delta)
 
             case "response.audio_transcript.done":
@@ -347,7 +352,8 @@ CRITICAL INSTRUCTIONS:
                 # Filter out audio-only marker (Voice Live uses this for speech without text)
                 if transcript and transcript.strip() != "<|audio_text|>":
                     logger.info(f"🤖 Assistant: {transcript}")
-                    self.session.add_transcript("assistant", transcript)
+                    if self.session:
+                        self.session.add_transcript("assistant", transcript)
                 else:
                     logger.debug(f"🎵 Audio-only response (no transcript)")
                 # Reset skip flag after response completes
