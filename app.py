@@ -524,6 +524,7 @@ async def send_signalwire_audio_to_azure(
 
                         # Add business context
                         # Get business hours configuration for this company
+                        company_config = get_cached_config(company_id)
                         business_hours_config = company_config.get('business-hours', {})
                         timezone_str = business_hours_config.get('timezone', 'US/Eastern')
                         business_days = business_hours_config.get('days', [0, 1, 2, 3, 4])  # 0=Monday, 6=Sunday
