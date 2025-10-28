@@ -257,7 +257,7 @@ async def create_azure_websocket_connection(company_instructions, voice_name, au
 
     azure_ws = await websockets.connect(ws_url)
 
-    # Simple session config - let server VAD handle everything naturally
+    # Session config with function calling tools
     session_config = {
         "type": "session.update",
         "session": {
@@ -274,6 +274,39 @@ async def create_azure_websocket_connection(company_instructions, voice_name, au
             },
             "temperature": float(audio_settings.get("temperature", 0.6)),
             "max_response_output_tokens": int(audio_settings.get("max-response-tokens", 2048)),
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "verify_surname",
+                    "description": "Verify the spelling of a caller's last name using phonetic matching. Use this when a caller provides their last name to confirm the correct spelling.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "surname": {
+                                "type": "string",
+                                "description": "The surname as heard from the caller (e.g., 'Smith', 'Myer', 'Rodriguez')"
+                            }
+                        },
+                        "required": ["surname"]
+                    }
+                },
+                {
+                    "type": "function",
+                    "name": "lookup_zipcode",
+                    "description": "Look up the city and state for a US ZIP code. Use this when a caller provides their ZIP code to confirm their location.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "zipcode": {
+                                "type": "string",
+                                "description": "5-digit US ZIP code (e.g., '22124', '90210')"
+                            }
+                        },
+                        "required": ["zipcode"]
+                    }
+                }
+            ],
+            "tool_choice": "auto"
         }
     }
     
@@ -375,7 +408,7 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
                     event = json.loads(message)
                     call_session = shared_state.get("call_session")
                     stream_sid = shared_state.get("stream_sid")
-                    await handle_azure_event(event, signalwire_ws, company_name, stream_sid, call_session)
+                    await handle_azure_event(event, signalwire_ws, azure_ws, company_name, stream_sid, call_session)
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse Azure message: {e}")
                 except Exception as e:
@@ -410,6 +443,7 @@ ASR_DONE_EVENTS = {"response.audio_transcript.done", "response.output_audio_tran
 async def handle_azure_event(
     event: Dict[str, Any],
     signalwire_ws: WebSocket,
+    azure_ws,
     company_name: str,
     stream_sid: Optional[str],
     call_session: Optional[CallSession]
@@ -465,6 +499,74 @@ async def handle_azure_event(
             if transcript_text:
                 call_session.add_transcript_entry("ai", transcript_text)
                 logger.info(f"📝 AI: {transcript_text}")
+
+    elif event_type == "response.function_call_arguments.done":
+        # Handle function call from the model
+        call_id = event.get("call_id")
+        function_name = event.get("name")
+        arguments_str = event.get("arguments", "{}")
+
+        logger.info(f"🔧 Function call: {function_name}({arguments_str})")
+
+        try:
+            arguments = json.loads(arguments_str)
+            result = None
+
+            if function_name == "verify_surname":
+                surname = arguments.get("surname", "")
+                logger.info(f"🔍 Verifying surname: {surname}")
+
+                # Run phonetic surname matching
+                candidates = find_surname_candidates(surname, db_path="data/surnames.db")
+                prompt_data = generate_llm_prompt(surname, candidates)
+
+                result = {
+                    "candidates": [{"name": c[0], "score": c[1]} for c in candidates[:3]],
+                    "prompt_type": prompt_data["type"],
+                    "suggestion": prompt_data["prompt"]
+                }
+                logger.info(f"✅ Surname verification: {prompt_data['type']}")
+
+            elif function_name == "lookup_zipcode":
+                zipcode = arguments.get("zipcode", "")
+                logger.info(f"🔍 Looking up ZIP code: {zipcode}")
+
+                location = zipcode_service.lookup(zipcode)
+                if location:
+                    result = {
+                        "zipcode": zipcode,
+                        "city": location["city"],
+                        "state": location["state"],
+                        "found": True
+                    }
+                    logger.info(f"✅ ZIP lookup: {location['city']}, {location['state']}")
+                else:
+                    result = {
+                        "zipcode": zipcode,
+                        "found": False,
+                        "message": "ZIP code not found"
+                    }
+                    logger.warning(f"❌ ZIP code not found: {zipcode}")
+
+            # Send function result back to Azure
+            if result and call_id:
+                function_output = {
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": json.dumps(result)
+                    }
+                }
+                await azure_ws.send(json.dumps(function_output))
+                logger.info(f"✅ Sent function result for {function_name}")
+
+                # Request a new response to continue the conversation
+                await azure_ws.send(json.dumps({"type": "response.create"}))
+
+        except Exception as e:
+            logger.error(f"❌ Function call error: {e}")
+            logger.error(traceback.format_exc())
 
     elif event_type == "response.done":
         logger.info("✅ Response complete")
