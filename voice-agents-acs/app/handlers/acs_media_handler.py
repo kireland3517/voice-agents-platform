@@ -518,13 +518,14 @@ CRITICAL INSTRUCTIONS:
                     logger.debug(f"📤 Sending {len(audio_bytes)} bytes to web client")
                     await self.incoming_websocket.send(audio_bytes)
                 else:
-                    # ACS expects JSON-wrapped base64 audio
-                    # Voice Live outputs 24kHz PCM16, so we must specify Pcm24K to match
+                    # ACS expects JSON with capitalized fields and nested AudioData structure
+                    # Voice Live outputs 24kHz PCM16 - ACS format was set to Pcm24KMono in MediaStreamingOptions
                     acs_message = {
-                        "kind": "AudioData",
-                        "audioData": audio_b64,
-                        "audioFormat": "Pcm24K",
-                        "participantRawID": "bot"
+                        "Kind": "AudioData",
+                        "AudioData": {
+                            "Data": audio_b64
+                        },
+                        "StopAudio": None
                     }
                     await self.incoming_websocket.send(json.dumps(acs_message))
             except Exception as e:
