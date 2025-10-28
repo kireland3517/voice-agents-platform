@@ -585,7 +585,8 @@ async def send_signalwire_audio_to_azure(
                             f"Date: {now_local.strftime('%B %d, %Y')}\n"
                             f"Day: {now_local.strftime('%A')}\n"
                             f"Time: {now_local.strftime('%I:%M %p')} {tz_abbrev}\n"
-                            f"{'Agents available now for warm transfer' if is_business_hours else 'Outside business hours; schedule callback'}\n"
+                            f"Business hours: Monday-Friday {open_time_str} - {close_time_str} {tz_abbrev}\n"
+                            f"Current status: {'OPEN - agents available for transfer' if is_business_hours else 'CLOSED - outside business hours'}\n"
                             f"CallerID: {formatted_phone}\n"
                             "When collecting a callback number, confirm the caller ID when appropriate."
                         )
