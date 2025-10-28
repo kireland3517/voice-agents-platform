@@ -225,12 +225,11 @@ CRITICAL INSTRUCTIONS:
                 },
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
-                "input_audio_sampling_rate": 24000,
+                "input_audio_sampling_rate": 24000,  # 24kHz is Voice Live default, matches ACS PSTN
             },
         }
 
-        logger.info(f"🎵 Audio formats: input=pcm16@24kHz, output=pcm16@16kHz")
-        
+        logger.info(f"🎵 Audio formats: input=pcm16@24kHz, output=pcm16@24kHz")
         await self._send_json(session_config)
         # Clear any buffered user audio that accumulated during connection setup
         # This prevents Voice Live from thinking the user is speaking when we request the greeting
@@ -520,11 +519,11 @@ CRITICAL INSTRUCTIONS:
                     await self.incoming_websocket.send(audio_bytes)
                 else:
                     # ACS expects JSON-wrapped base64 audio
-                    # Voice Live outputs 16kHz PCM16, so we must specify Pcm16K to match
+                    # Voice Live outputs 24kHz PCM16, so we must specify Pcm24K to match
                     acs_message = {
                         "kind": "AudioData",
                         "audioData": audio_b64,
-                        "audioFormat": "Pcm16K",
+                        "audioFormat": "Pcm24K",
                         "participantRawID": "bot"
                     }
                     await self.incoming_websocket.send(json.dumps(acs_message))

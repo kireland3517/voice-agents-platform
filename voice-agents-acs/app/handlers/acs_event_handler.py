@@ -107,7 +107,7 @@ class AcsEventHandler:
                     audio_channel_type=MediaStreamingAudioChannelType.MIXED,
                     start_media_streaming=True,
                     enable_bidirectional=True,
-                    audio_format=AudioFormat.PCM16_K_MONO,  # 16kHz PCM mono to match Voice Live output
+                    audio_format=AudioFormat.PCM24_K_MONO,  # 24kHz PCM mono - Voice Live default, matches PSTN
                 )
 
                 # Answer the call
