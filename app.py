@@ -712,16 +712,16 @@ async def send_signalwire_audio_to_azure(
 
                         # Brief pause then trigger greeting
                         await asyncio.sleep(0.1)
-                        
+
+                        # Trigger response - Cedar will use his script's greeting
                         initial_response = {
                             "type": "response.create",
                             "response": {
-                                "modalities": ["text", "audio"],
-                                "instructions": greeting_text
+                                "modalities": ["text", "audio"]
                             }
                         }
                         await azure_ws.send(json.dumps(initial_response))
-                        logger.info("✅ Triggered greeting")
+                        logger.info("✅ Triggered greeting (Cedar will use his script)")
 
                     elif event_name == "media":
                         if not call_session:
