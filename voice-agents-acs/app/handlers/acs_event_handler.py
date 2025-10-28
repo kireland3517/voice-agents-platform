@@ -146,6 +146,15 @@ class AcsEventHandler:
             if event_type == "Microsoft.Communication.CallConnected":
                 logger.info("✅ Call connected successfully")
 
+            elif event_type == "Microsoft.Communication.MediaStreamingStarted":
+                logger.info("🎵 Media streaming started - ACS connected to WebSocket")
+
+            elif event_type == "Microsoft.Communication.MediaStreamingFailed":
+                logger.error(f"❌ Media streaming failed: {event_dict}")
+
+            elif event_type == "Microsoft.Communication.MediaStreamingStopped":
+                logger.info("🛑 Media streaming stopped")
+
             elif event_type == "Microsoft.Communication.CallDisconnected":
                 logger.info("📴 Call disconnected")
                 # TODO: Trigger cleanup, save recordings/transcripts
