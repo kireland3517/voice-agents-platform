@@ -151,9 +151,9 @@ async def acs_websocket():
         await handler.init_incoming_websocket(websocket, is_raw_audio=False, caller_id=caller_id)
 
         # Connect to Voice Live API
-        asyncio.create_task(handler.connect())
+        await handler.connect()
 
-        # Stream audio from ACS to Voice Live
+        # Receive loop - stream audio from ACS to Voice Live
         while True:
             msg = await websocket.receive()
             await handler.acs_to_voicelive(msg)
