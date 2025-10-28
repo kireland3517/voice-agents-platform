@@ -17,6 +17,8 @@ from starlette.websockets import WebSocketState
 from dotenv import load_dotenv
 
 from config import ConfigManager
+from zipcode_service import ZipcodeService
+from surname_verifier import find_surname_candidates, generate_llm_prompt
 
 from functools import lru_cache
 from time import time
@@ -43,6 +45,7 @@ SAVE_RECORDINGS = os.getenv("SAVE_RECORDINGS", "true").lower() == "true"
 SAVE_TRANSCRIPTS = os.getenv("SAVE_TRANSCRIPTS", "true").lower() == "true"
 
 config_manager = ConfigManager()
+zipcode_service = ZipcodeService()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION CACHE (5-minute TTL)

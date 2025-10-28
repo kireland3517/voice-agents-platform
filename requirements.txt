@@ -6,3 +6,5 @@ azure-identity==1.15.0
 azure-storage-blob==12.19.0
 python-dotenv==1.0.0
 pytz==2024.1
+phonetics==1.0.5
+jellyfish==1.0.3
