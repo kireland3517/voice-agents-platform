@@ -142,6 +142,9 @@ async def acs_websocket():
     WebSocket endpoint for ACS to stream audio to Voice Live API.
     This handles the bidirectional audio streaming.
     """
+    # Debug: Log connection attempt to verify ACS can reach this endpoint
+    logger.info(f"🔌 ACS WebSocket connection attempt detected")
+
     # Extract caller ID from query parameters (passed from callback URL)
     caller_id = websocket.args.get('callerId', None)
     logger.info(f"🔌 ACS WebSocket connection initiated (Caller ID: {caller_id})")
