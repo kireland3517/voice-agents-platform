@@ -710,8 +710,8 @@ async def send_signalwire_audio_to_azure(
                         await azure_ws.send(json.dumps(context_message))
                         logger.info("✅ Sent call context to model")
 
-                        # Brief pause then trigger greeting
-                        await asyncio.sleep(0.1)
+                        # Wait for audio stream to fully establish before greeting
+                        await asyncio.sleep(1.5)
 
                         # Trigger response - Cedar will use his script's greeting
                         initial_response = {
