@@ -82,7 +82,7 @@ logger.info("=" * 80)
 logger.info(f"Azure Endpoint: {AZURE_AI_ENDPOINT}")
 logger.info(f"Model: {AZURE_AI_MODEL}")
 logger.info(f"Audio Format: PCM16 24kHz passthrough")
-logger.info(f"Voice: Azure TTS (en-US-SamuelMultilingualNeural)")
+logger.info(f"Voice: Azure TTS (en-US-FableTurboMultilingualNeural)")
 logger.info(f"Save Recordings: {SAVE_RECORDINGS}")
 logger.info(f"Save Transcripts: {SAVE_TRANSCRIPTS}")
 logger.info("=" * 80)
@@ -281,9 +281,9 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
     ).__aenter__()  # Enter async context manager
 
     # Configure Azure TTS voice (for SSML prosody support and consistent tone)
-    # Using en-US-SamuelMultilingualNeural - multilingual voice
+    # Using en-US-FableTurboMultilingualNeural - OpenAI Fable voice (British-ish) with SSML support
     voice_config = AzureStandardVoice(
-        name="en-US-SamuelMultilingualNeural",
+        name="en-US-FableTurboMultilingualNeural",
         type="azure-standard"
     )
 
@@ -314,7 +314,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
     await connection.session.update(session=session_config)
 
     logger.info("✅ Voice Live API session configured")
-    logger.info(f"   Voice: en-US-SamuelMultilingualNeural (Azure TTS)")
+    logger.info(f"   Voice: en-US-FableTurboMultilingualNeural (Azure TTS)")
     logger.info(f"   Mode: Natural conversation (server VAD)")
     logger.info(f"   Temperature: {audio_settings.get('temperature', 0.4)}")
 
@@ -333,7 +333,7 @@ def root():
         "version": "14.0 - Azure Voice Live API",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
-        "voice": "en-US-SamuelMultilingualNeural (Azure TTS)",
+        "voice": "en-US-FableTurboMultilingualNeural (Azure TTS)",
         "audio_format": "PCM16 24kHz passthrough",
         "features": [
             "Azure TTS voices with SSML support",
