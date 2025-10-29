@@ -8,7 +8,6 @@ import io
 from typing import Optional, List, Dict, Any
 from datetime import datetime, UTC
 import traceback
-import websockets
 import pytz
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -22,6 +21,19 @@ from surname_verifier import find_surname_candidates, generate_llm_prompt
 
 from functools import lru_cache
 from time import time
+
+# Azure Voice Live SDK imports
+from azure.core.credentials import AzureKeyCredential
+from azure.ai.voicelive.aio import connect
+from azure.ai.voicelive.models import (
+    RequestSession,
+    ServerVad,
+    AzureStandardVoice,
+    Modality,
+    InputAudioFormat,
+    OutputAudioFormat,
+    ServerEventType
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # LOGGING
@@ -65,11 +77,12 @@ if not (AZURE_AI_ENDPOINT and AZURE_AI_KEY):
     raise ValueError("AZURE_AI_ENDPOINT and AZURE_AI_KEY are required")
 
 logger.info("=" * 80)
-logger.info("🎙️ VOICE AGENT - AZURE OPENAI REALTIME API")
+logger.info("🎙️ VOICE AGENT - AZURE VOICE LIVE API")
 logger.info("=" * 80)
 logger.info(f"Azure Endpoint: {AZURE_AI_ENDPOINT}")
 logger.info(f"Model: {AZURE_AI_MODEL}")
 logger.info(f"Audio Format: PCM16 24kHz passthrough")
+logger.info(f"Voice: Azure TTS (en-US-Guy:DragonHDLatestNeural)")
 logger.info(f"Save Recordings: {SAVE_RECORDINGS}")
 logger.info(f"Save Transcripts: {SAVE_TRANSCRIPTS}")
 logger.info("=" * 80)
@@ -249,82 +262,63 @@ CONVERSATION APPROACH:
     return instructions, openai_voice, greeting
 
 # ──────────────────────────────────────────────────────────────────────────────
-# AZURE REALTIME WS CONNECTION
+# AZURE VOICE LIVE API CONNECTION
 # ──────────────────────────────────────────────────────────────────────────────
-async def create_azure_websocket_connection(company_instructions, voice_name, audio_settings):
-    base_endpoint = AZURE_AI_ENDPOINT.replace("https://", "").replace("http://", "").split('/')[0]
-    ws_url = (
-        f"wss://{base_endpoint}/openai/realtime"
-        f"?api-version=2025-04-01-preview"
-        f"&deployment={AZURE_AI_MODEL}"
-        f"&api-key={AZURE_AI_KEY}"
+async def create_voicelive_connection(company_instructions, voice_name, audio_settings):
+    """
+    Create Voice Live API connection with Azure TTS voice.
+    Uses en-US-Guy:DragonHDLatestNeural for consistent, empathetic prosody.
+    """
+    logger.info("Connecting to Azure Voice Live API")
+    logger.info(f"Endpoint: {AZURE_AI_ENDPOINT}")
+    logger.info(f"Model: {AZURE_AI_MODEL}")
+
+    # Connect using Voice Live SDK
+    connection = await connect(
+        endpoint=AZURE_AI_ENDPOINT,
+        credential=AzureKeyCredential(AZURE_AI_KEY),
+        model=AZURE_AI_MODEL,
+    ).__aenter__()  # Enter async context manager
+
+    # Configure Azure TTS voice (for SSML prosody support and consistent tone)
+    # Using en-US-Guy:DragonHDLatestNeural - warm, empathetic, professional male voice
+    voice_config = AzureStandardVoice(
+        name="en-US-Guy:DragonHDLatestNeural",
+        type="azure-standard"
     )
 
-    logger.info("Connecting to Azure OpenAI Realtime API")
-    logger.info(f"Endpoint: wss://{base_endpoint}/openai/realtime")
-    logger.info(f"Deployment: {AZURE_AI_MODEL}")
+    # Configure turn detection with Server VAD
+    turn_detection_config = ServerVad(
+        threshold=0.3,              # Lower = more sensitive to interruptions
+        prefix_padding_ms=200,      # Less padding = faster interruption detection
+        silence_duration_ms=800     # Shorter silence = quicker turn-end detection
+    )
 
-    azure_ws = await websockets.connect(ws_url)
+    # NOTE: Voice Live API doesn't support tools in RequestSession yet
+    # Function calling would need to be handled separately if needed
+    # For now, we'll configure without tools and handle in Azure OpenAI model
 
-    # Session config with function calling tools
-    session_config = {
-        "type": "session.update",
-        "session": {
-            "modalities": ["text", "audio"],
-            "instructions": company_instructions,
-            "voice": voice_name,
-            "input_audio_format": "pcm16",
-            "output_audio_format": "pcm16",
-            "turn_detection": {
-                "type": "server_vad",
-                "threshold": 0.3,              # Lower = more sensitive to interruptions
-                "prefix_padding_ms": 200,      # Less padding = faster interruption detection
-                "silence_duration_ms": 800,    
-            },
-            "temperature": float(audio_settings.get("temperature", 0.6)),
-            "max_response_output_tokens": int(audio_settings.get("max-response-tokens", 2048)),
-            "tools": [
-                {
-                    "type": "function",
-                    "name": "verify_surname",
-                    "description": "Verify the spelling of a caller's last name using phonetic matching. Use this when a caller provides their last name to confirm the correct spelling.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "surname": {
-                                "type": "string",
-                                "description": "The surname as heard from the caller (e.g., 'Smith', 'Myer', 'Rodriguez')"
-                            }
-                        },
-                        "required": ["surname"]
-                    }
-                },
-                {
-                    "type": "function",
-                    "name": "lookup_zipcode",
-                    "description": "Look up the city and state for a US ZIP code. Use this when a caller provides their ZIP code to confirm their location.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "zipcode": {
-                                "type": "string",
-                                "description": "5-digit US ZIP code (e.g., '22124', '90210')"
-                            }
-                        },
-                        "required": ["zipcode"]
-                    }
-                }
-            ],
-            "tool_choice": "auto"
-        }
-    }
-    
-    await azure_ws.send(json.dumps(session_config))
-    logger.info("✅ Azure Realtime session configured")
-    logger.info(f"   Voice: {voice_name}")
+    # Create session configuration
+    session_config = RequestSession(
+        modalities=[Modality.TEXT, Modality.AUDIO],
+        instructions=company_instructions,
+        voice=voice_config,
+        input_audio_format=InputAudioFormat.PCM16,
+        output_audio_format=OutputAudioFormat.PCM16,
+        turn_detection=turn_detection_config,
+        temperature=float(audio_settings.get("temperature", 0.4)),
+        max_response_output_tokens=int(audio_settings.get("max-response-tokens", 2048))
+    )
+
+    # Update session
+    await connection.session.update(session=session_config)
+
+    logger.info("✅ Voice Live API session configured")
+    logger.info(f"   Voice: en-US-Guy:DragonHDLatestNeural (Azure TTS HD)")
     logger.info(f"   Mode: Natural conversation (server VAD)")
-    
-    return azure_ws
+    logger.info(f"   Temperature: {audio_settings.get('temperature', 0.4)}")
+
+    return connection
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FASTAPI APP
@@ -397,34 +391,31 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         await signalwire_ws.close(code=1011)
         return
 
-    azure_ws = None
     shared_state: Dict[str, Any] = {"call_session": None, "stream_sid": None}
-
+    voicelive_connection = None
     try:
         instructions, voice_name, greeting_text = build_company_instructions(company_config)
-        azure_ws = await create_azure_websocket_connection(instructions, voice_name, audio_settings)
-        logger.info(f"✅ Azure OpenAI Realtime connection established for {company_name}")
+        voicelive_connection = await create_voicelive_connection(instructions, voice_name, audio_settings)
+        logger.info(f"✅ Azure Voice Live API connection established for {company_name}")
 
         # Start bidirectional audio forwarding
         audio_sender_task = asyncio.create_task(
-            send_signalwire_audio_to_azure(signalwire_ws, azure_ws, company_id, company_name, shared_state, greeting_text)
+            send_signalwire_audio_to_voicelive(signalwire_ws, voicelive_connection, company_id, company_name, shared_state, greeting_text)
         )
         logger.info(f"🎙️ {company_name} agent ready for calls!")
 
         try:
-            async for message in azure_ws:
+            # Process events from Voice Live API
+            async for event in voicelive_connection:
                 try:
-                    event = json.loads(message)
                     call_session = shared_state.get("call_session")
                     stream_sid = shared_state.get("stream_sid")
-                    await handle_azure_event(event, signalwire_ws, azure_ws, company_name, stream_sid, call_session)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse Azure message: {e}")
+                    await handle_voicelive_event(event, signalwire_ws, voicelive_connection, company_name, stream_sid, call_session)
                 except Exception as e:
-                    logger.error(f"Error handling Azure event: {e}")
+                    logger.error(f"Error handling Voice Live event: {e}")
                     logger.error(traceback.format_exc())
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Azure WebSocket connection closed for {company_name}")
+        except Exception as e:
+            logger.info(f"Voice Live connection closed for {company_name}: {e}")
         finally:
             audio_sender_task.cancel()
             try:
@@ -433,59 +424,56 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
                 pass
 
     except Exception as e:
-        msg = f"Azure connection failed: {e}"
+        msg = f"Voice Live connection failed: {e}"
         logger.error(msg)
         logger.error(traceback.format_exc())
         if signalwire_ws.application_state == WebSocketState.CONNECTED:
-            await signalwire_ws.send_text(json.dumps({"type": "error", "source": "azure", "detail": str(e)}))
+            await signalwire_ws.send_text(json.dumps({"type": "error", "source": "voicelive", "detail": str(e)}))
             await signalwire_ws.close(code=1011)
     finally:
-        if azure_ws:
-            await azure_ws.close()
+        if voicelive_connection:
+            try:
+                await voicelive_connection.__aexit__(None, None, None)
+            except Exception as e:
+                logger.error(f"Error closing Voice Live connection: {e}")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# AZURE → SIGNALWIRE EVENT HANDLER (SIMPLIFIED)
+# VOICE LIVE → SIGNALWIRE EVENT HANDLER
 # ──────────────────────────────────────────────────────────────────────────────
-AUDIO_DELTA_EVENTS = {"response.audio.delta", "response.output_audio.delta"}
-ASR_DONE_EVENTS = {"response.audio_transcript.done", "response.output_audio_transcript.done"}
-
-async def handle_azure_event(
-    event: Dict[str, Any],
+async def handle_voicelive_event(
+    event,  # Voice Live SDK event object
     signalwire_ws: WebSocket,
-    azure_ws,
+    voicelive_connection,
     company_name: str,
     stream_sid: Optional[str],
     call_session: Optional[CallSession]
 ):
-    event_type = event.get("type", "")
-    logger.debug(f"📥 Azure event: {event_type}")
+    """Handle events from Voice Live API and forward to SignalWire"""
+    logger.debug(f"📥 Voice Live event: {event.type}")
 
-    if event_type == "session.updated":
-        logger.info(f"✅ {company_name} Realtime session ready")
+    if event.type == ServerEventType.SESSION_UPDATED:
+        logger.info(f"✅ {company_name} Voice Live session ready")
 
-    elif event_type == "input_audio_buffer.speech_started":
+    elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
         logger.info("🎤 Caller started speaking")
 
-    elif event_type == "input_audio_buffer.speech_stopped":
+    elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
         logger.info("🎤 Caller stopped speaking")
 
-    elif event_type == "conversation.item.input_audio_transcription.completed":
-        if SAVE_TRANSCRIPTS and call_session:
-            transcript_text = event.get("transcript", "")
-            if transcript_text:
-                call_session.add_transcript_entry("caller", transcript_text)
-                logger.info(f"📝 Caller: {transcript_text}")
-
-    elif event_type == "response.created":
+    elif event.type == ServerEventType.RESPONSE_CREATED:
         logger.info(f"🤖 {company_name} AI responding")
 
-    elif event_type in AUDIO_DELTA_EVENTS:
+    elif event.type == ServerEventType.RESPONSE_AUDIO_DELTA:
         if signalwire_ws.application_state != WebSocketState.CONNECTED:
             return
-        
-        audio_b64 = event.get("delta")
-        if not audio_b64:
+
+        # Voice Live SDK returns audio as bytes in event.delta
+        audio_bytes = event.delta
+        if not audio_bytes:
             return
+
+        # Convert bytes to base64 for SignalWire
+        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
 
         # Save AI audio for recording
         if call_session and SAVE_RECORDINGS:
@@ -502,12 +490,8 @@ async def handle_azure_event(
             "media": {"payload": audio_b64}
         }))
 
-    elif event_type in ASR_DONE_EVENTS:
-        if SAVE_TRANSCRIPTS and call_session:
-            transcript_text = event.get("transcript", "")
-            if transcript_text:
-                call_session.add_transcript_entry("ai", transcript_text)
-                logger.info(f"📝 AI: {transcript_text}")
+    elif event.type == ServerEventType.RESPONSE_AUDIO_DONE:
+        logger.info(f"🤖 {company_name} finished speaking")
 
     elif event_type == "response.function_call_arguments.done":
         # Handle function call from the model
