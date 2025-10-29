@@ -196,8 +196,17 @@ def build_company_instructions(company_config):
 
     detailed_instructions = company_config.get('detailed-instructions')
 
+    # Voice consistency guidance (applies to all instructions)
+    voice_consistency_prefix = """VOICE DELIVERY GUIDELINES:
+- Maintain consistent tone, pitch, and pacing throughout the entire conversation
+- Use the same professional, warm voice quality for every response
+- Avoid sudden changes in speaking style or vocal characteristics
+- Speak naturally and conversationally with stable prosody
+
+"""
+
     if detailed_instructions:
-        instructions = detailed_instructions
+        instructions = voice_consistency_prefix + detailed_instructions
     else:
         contact_section = ""
         if customer_service_phone or customer_service_email:
@@ -215,7 +224,7 @@ def build_company_instructions(company_config):
             if transfer_hours:
                 business_section += f"\n- Transfer/live agent hours: {transfer_hours}"
 
-        instructions = f"""You are a professional phone agent for {company_name}.
+        instructions = voice_consistency_prefix + f"""You are a professional phone agent for {company_name}.
 
 GREETING: {greeting}
 
