@@ -267,7 +267,7 @@ CONVERSATION APPROACH:
 async def create_voicelive_connection(company_instructions, voice_name, audio_settings):
     """
     Create Voice Live API connection with Azure TTS voice.
-    Uses en-US-Guy:DragonHDLatestNeural for consistent, empathetic prosody.
+    Configured voice provides consistent prosody with SSML support.
     """
     logger.info("Connecting to Azure Voice Live API")
     logger.info(f"Endpoint: {AZURE_AI_ENDPOINT}")
