@@ -82,7 +82,7 @@ logger.info("=" * 80)
 logger.info(f"Azure Endpoint: {AZURE_AI_ENDPOINT}")
 logger.info(f"Model: {AZURE_AI_MODEL}")
 logger.info(f"Audio Format: PCM16 24kHz passthrough")
-logger.info(f"Voice: Azure TTS (en-US-Guy:DragonHDLatestNeural)")
+logger.info(f"Voice: Azure TTS (en-US-GuyNeural)")
 logger.info(f"Save Recordings: {SAVE_RECORDINGS}")
 logger.info(f"Save Transcripts: {SAVE_TRANSCRIPTS}")
 logger.info("=" * 80)
@@ -281,9 +281,9 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
     ).__aenter__()  # Enter async context manager
 
     # Configure Azure TTS voice (for SSML prosody support and consistent tone)
-    # Using en-US-Guy:DragonHDLatestNeural - warm, empathetic, professional male voice
+    # Using en-US-GuyNeural - warm, empathetic, professional male voice
     voice_config = AzureStandardVoice(
-        name="en-US-Guy:DragonHDLatestNeural",
+        name="en-US-GuyNeural",
         type="azure-standard"
     )
 
@@ -314,7 +314,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
     await connection.session.update(session=session_config)
 
     logger.info("✅ Voice Live API session configured")
-    logger.info(f"   Voice: en-US-Guy:DragonHDLatestNeural (Azure TTS HD)")
+    logger.info(f"   Voice: en-US-GuyNeural (Azure TTS)")
     logger.info(f"   Mode: Natural conversation (server VAD)")
     logger.info(f"   Temperature: {audio_settings.get('temperature', 0.4)}")
 
@@ -333,7 +333,7 @@ def root():
         "version": "14.0 - Azure Voice Live API",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
-        "voice": "en-US-Guy:DragonHDLatestNeural (Azure TTS HD)",
+        "voice": "en-US-GuyNeural (Azure TTS)",
         "audio_format": "PCM16 24kHz passthrough",
         "features": [
             "Azure TTS voices with SSML support",
@@ -434,11 +434,9 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
             await signalwire_ws.send_text(json.dumps({"type": "error", "source": "voicelive", "detail": str(e)}))
             await signalwire_ws.close(code=1011)
     finally:
-        if voicelive_connection:
-            try:
-                await voicelive_connection.__aexit__(None, None, None)
-            except Exception as e:
-                logger.error(f"Error closing Voice Live connection: {e}")
+        # Voice Live SDK connection cleanup is handled automatically
+        # No explicit close needed for connections created with __aenter__()
+        pass
 
 # ──────────────────────────────────────────────────────────────────────────────
 # VOICE LIVE → SIGNALWIRE EVENT HANDLER
