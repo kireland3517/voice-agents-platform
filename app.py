@@ -287,11 +287,15 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         type="azure-standard"
     )
 
-    # Configure turn detection with Server VAD
+    # Configure turn detection with Server VAD (from audio-settings in Azure App Config)
+    vad_threshold = float(audio_settings.get('vad-threshold', 0.3))
+    vad_prefix_padding_ms = int(audio_settings.get('vad-prefix-padding-ms', 200))
+    vad_silence_duration_ms = int(audio_settings.get('vad-silence-duration-ms', 800))
+
     turn_detection_config = ServerVad(
-        threshold=0.3,              # Lower = more sensitive to interruptions
-        prefix_padding_ms=200,      # Less padding = faster interruption detection
-        silence_duration_ms=800     # Shorter silence = quicker turn-end detection
+        threshold=vad_threshold,              # Lower = more sensitive to interruptions
+        prefix_padding_ms=vad_prefix_padding_ms,      # Less padding = faster interruption detection
+        silence_duration_ms=vad_silence_duration_ms   # Shorter silence = quicker turn-end detection
     )
 
     # NOTE: Voice Live API doesn't support tools in RequestSession yet
@@ -317,6 +321,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
     logger.info(f"   Voice: en-US-FableTurboMultilingualNeural (Azure TTS)")
     logger.info(f"   Mode: Natural conversation (server VAD)")
     logger.info(f"   Temperature: {audio_settings.get('temperature', 0.4)}")
+    logger.info(f"   VAD Settings: threshold={vad_threshold}, silence={vad_silence_duration_ms}ms, padding={vad_prefix_padding_ms}ms")
 
     return connection
 
