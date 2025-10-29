@@ -330,11 +330,14 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "13.0 - Simplified (No Barge-In)",
-        "api": "Azure OpenAI Realtime API",
+        "version": "14.0 - Azure Voice Live API",
+        "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
+        "voice": "en-US-Guy:DragonHDLatestNeural (Azure TTS HD)",
         "audio_format": "PCM16 24kHz passthrough",
         "features": [
+            "Azure TTS voices with SSML support",
+            "Consistent prosody",
             "Server-side VAD",
             "Native audio streaming",
             "Natural conversation flow",
@@ -493,93 +496,29 @@ async def handle_voicelive_event(
     elif event.type == ServerEventType.RESPONSE_AUDIO_DONE:
         logger.info(f"🤖 {company_name} finished speaking")
 
-    elif event_type == "response.function_call_arguments.done":
-        # Handle function call from the model
-        call_id = event.get("call_id")
-        function_name = event.get("name")
-        arguments_str = event.get("arguments", "{}")
-
-        logger.info(f"🔧 Function call: {function_name}({arguments_str})")
-
-        try:
-            arguments = json.loads(arguments_str)
-            result = None
-
-            if function_name == "verify_surname":
-                surname = arguments.get("surname", "")
-                logger.info(f"🔍 Verifying surname: {surname}")
-
-                # Run phonetic surname matching
-                candidates = find_surname_candidates(surname, db_path="data/surnames.db")
-                prompt_data = generate_llm_prompt(surname, candidates)
-
-                result = {
-                    "candidates": [{"name": c[0], "score": c[1]} for c in candidates[:3]],
-                    "prompt_type": prompt_data["type"],
-                    "suggestion": prompt_data["prompt"]
-                }
-                logger.info(f"✅ Surname verification: {prompt_data['type']}")
-
-            elif function_name == "lookup_zipcode":
-                zipcode = arguments.get("zipcode", "")
-                logger.info(f"🔍 Looking up ZIP code: {zipcode}")
-
-                location = zipcode_service.lookup(zipcode)
-                if location:
-                    result = {
-                        "zipcode": zipcode,
-                        "city": location["city"],
-                        "state": location["state"],
-                        "found": True
-                    }
-                    logger.info(f"✅ ZIP lookup: {location['city']}, {location['state']}")
-                else:
-                    result = {
-                        "zipcode": zipcode,
-                        "found": False,
-                        "message": "ZIP code not found"
-                    }
-                    logger.warning(f"❌ ZIP code not found: {zipcode}")
-
-            # Send function result back to Azure
-            if result and call_id:
-                function_output = {
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "function_call_output",
-                        "call_id": call_id,
-                        "output": json.dumps(result)
-                    }
-                }
-                await azure_ws.send(json.dumps(function_output))
-                logger.info(f"✅ Sent function result for {function_name}")
-
-                # Request a new response to continue the conversation
-                await azure_ws.send(json.dumps({"type": "response.create"}))
-
-        except Exception as e:
-            logger.error(f"❌ Function call error: {e}")
-            logger.error(traceback.format_exc())
-
-    elif event_type == "response.done":
+    elif event.type == ServerEventType.RESPONSE_DONE:
         logger.info("✅ Response complete")
 
-    elif event_type == "error":
-        error_msg = (event.get("error") or {}).get("message", "Unknown error")
-        logger.error(f"❌ Azure error: {error_msg}")
+    elif event.type == ServerEventType.ERROR:
+        error_msg = getattr(event, 'error', {}).get('message', 'Unknown error') if hasattr(event, 'error') else 'Unknown error'
+        logger.error(f"❌ Voice Live error: {error_msg}")
         if signalwire_ws.application_state == WebSocketState.CONNECTED:
             await signalwire_ws.send_text(json.dumps({
                 "type": "error",
-                "source": "azure",
+                "source": "voicelive",
                 "detail": error_msg
             }))
 
+    # Note: Function calling temporarily removed
+    # Voice Live SDK doesn't support tools in RequestSession yet
+    # Will re-add when SDK supports function calling
+
 # ──────────────────────────────────────────────────────────────────────────────
-# SIGNALWIRE → AZURE AUDIO FORWARDER
+# SIGNALWIRE → VOICE LIVE AUDIO FORWARDER
 # ──────────────────────────────────────────────────────────────────────────────
-async def send_signalwire_audio_to_azure(
+async def send_signalwire_audio_to_voicelive(
     signalwire_ws: WebSocket,
-    azure_ws,
+    voicelive_connection,
     company_id: str,
     company_name: str,
     shared_state: Dict[str, Any],
@@ -699,21 +638,16 @@ async def send_signalwire_audio_to_azure(
                             }
                         }
 
-                        logger.info(f"📤 Sending context to model:\n{context_text}")
-                        await azure_ws.send(json.dumps(context_message))
-                        logger.info("✅ Sent call context to model")
+                        # Note: Voice Live SDK handles context differently
+                        # Context is provided in the initial instructions
+                        logger.info(f"📤 Call context:\n{context_text}")
 
                         # Wait for audio stream to fully establish before greeting
                         await asyncio.sleep(1.5)
 
                         # Trigger response - Cedar will use his script's greeting
-                        initial_response = {
-                            "type": "response.create",
-                            "response": {
-                                "modalities": ["text", "audio"]
-                            }
-                        }
-                        await azure_ws.send(json.dumps(initial_response))
+                        # Voice Live SDK uses response.create() method
+                        await voicelive_connection.response.create()
                         logger.info("✅ Triggered greeting (Cedar will use his script)")
 
                     elif event_name == "media":
@@ -728,12 +662,9 @@ async def send_signalwire_audio_to_azure(
                         if SAVE_RECORDINGS:
                             call_session.add_caller_audio(payload)
 
-                        # Forward to Azure (server VAD handles turn detection)
-                        await azure_ws.send(json.dumps({
-                            "type": "input_audio_buffer.append",
-                            "audio": payload
-                        }))
-                        logger.debug("📨 Forwarded audio to Azure")
+                        # Forward to Voice Live API (server VAD handles turn detection)
+                        await voicelive_connection.input_audio_buffer.append(audio=payload)
+                        logger.debug("📨 Forwarded audio to Voice Live")
 
                     elif event_name == "stop":
                         logger.info(f"⏹️ Call ended for {company_name}")
