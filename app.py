@@ -266,125 +266,74 @@ CONVERSATION APPROACH:
 # ──────────────────────────────────────────────────────────────────────────────
 async def create_voicelive_connection(company_instructions, voice_name, audio_settings):
     """
-    Create Voice Live API connection with PRODUCTION-GRADE configuration.
-    All research-backed features enabled for optimal demo performance.
-
-    Features (all enabled by default in demo mode):
-    - Semantic VAD: 40-60% better turn detection
-    - Deep noise suppression: 60% noise reduction
-    - Echo cancellation: Feedback prevention
-    - Whisper transcription: Better accuracy
-    - Filler word removal: Auto-remove "uh", "um"
+    Create Voice Live API connection with optimized configuration.
+    Uses SDK typed models for maximum compatibility.
     """
     logger.info("=" * 80)
-    logger.info("🚀 DEMO MODE - Connecting to Azure Voice Live API with ALL features")
+    logger.info("🚀 DEMO MODE - Connecting to Azure Voice Live API with optimized config")
     logger.info(f"Endpoint: {AZURE_AI_ENDPOINT}")
     logger.info(f"Model: {AZURE_AI_MODEL}")
 
-    # Connect using Voice Live SDK
-    connection = await connect(
-        endpoint=AZURE_AI_ENDPOINT,
-        credential=AzureKeyCredential(AZURE_AI_KEY),
-        model=AZURE_AI_MODEL,
-    ).__aenter__()  # Enter async context manager
+    try:
+        # Connect using Voice Live SDK
+        connection = await connect(
+            endpoint=AZURE_AI_ENDPOINT,
+            credential=AzureKeyCredential(AZURE_AI_KEY),
+            model=AZURE_AI_MODEL,
+        ).__aenter__()  # Enter async context manager
 
-    # Extract configuration
-    vad_threshold = float(audio_settings.get('vad-threshold', 0.3))
-    vad_prefix_padding_ms = int(audio_settings.get('vad-prefix-padding-ms', 200))
-    vad_silence_duration_ms = int(audio_settings.get('vad-silence-duration-ms', 500))
-    end_utterance_timeout = int(audio_settings.get('vad-end-utterance-timeout-ms', 1000))
+        logger.info("✅ Voice Live connection established")
 
-    # Feature flags (all TRUE by default in demo mode)
-    use_semantic_vad = audio_settings.get('enable-semantic-vad', True)
-    use_noise_suppression = audio_settings.get('enable-noise-suppression', True)
-    use_echo_cancellation = audio_settings.get('enable-echo-cancellation', True)
-    use_transcription = audio_settings.get('enable-audio-transcription', True)
-    remove_fillers = audio_settings.get('remove-filler-words', True)
+        # Extract configuration
+        vad_threshold = float(audio_settings.get('vad-threshold', 0.3))
+        vad_prefix_padding_ms = int(audio_settings.get('vad-prefix-padding-ms', 200))
+        vad_silence_duration_ms = int(audio_settings.get('vad-silence-duration-ms', 500))
 
-    # Build complete production session configuration
-    # Using raw JSON to access features not available in typed SDK models
-    session_config = {
-        "type": "session.update",
-        "session": {
-            "modalities": ["text", "audio"],
-            "instructions": company_instructions,
+        # Configure Azure TTS voice
+        voice_config = AzureStandardVoice(
+            name="en-US-FableTurboMultilingualNeural",
+            type="azure-standard"
+        )
+        logger.info("✅ Azure TTS Voice configured: en-US-FableTurboMultilingualNeural")
 
-            # Azure TTS Voice
-            "voice": {
-                "type": "azure-standard",
-                "name": "en-US-FableTurboMultilingualNeural"
-            },
+        # Configure VAD (use standard ServerVad - semantic VAD may require different SDK version)
+        turn_detection_config = ServerVad(
+            threshold=vad_threshold,
+            prefix_padding_ms=vad_prefix_padding_ms,
+            silence_duration_ms=vad_silence_duration_ms
+        )
+        logger.info(f"✅ Server VAD configured (threshold={vad_threshold}, silence={vad_silence_duration_ms}ms)")
 
-            # Audio formats
-            "input_audio_format": "pcm16",
-            "output_audio_format": "pcm16",
-            "input_audio_sampling_rate": 24000,
-        }
-    }
+        # Create session configuration using SDK typed models
+        session_config = RequestSession(
+            modalities=[Modality.TEXT, Modality.AUDIO],
+            instructions=company_instructions,
+            voice=voice_config,
+            input_audio_format=InputAudioFormat.PCM16,
+            output_audio_format=OutputAudioFormat.PCM16,
+            turn_detection=turn_detection_config,
+            temperature=float(audio_settings.get("temperature", 0.8)),
+            max_response_output_tokens=int(audio_settings.get("max-response-tokens", 1500))
+        )
 
-    # Add noise suppression if enabled
-    if use_noise_suppression:
-        session_config["session"]["input_audio_noise_reduction"] = {
-            "type": "azure_deep_noise_suppression"
-        }
-        logger.info("   ✅ Deep Noise Suppression ENABLED")
+        # Update session using proper SDK method
+        await connection.session.update(session=session_config)
+        logger.info("✅ Voice Live session configured successfully")
 
-    # Add echo cancellation if enabled
-    if use_echo_cancellation:
-        session_config["session"]["input_audio_echo_cancellation"] = {
-            "type": "server_echo_cancellation"
-        }
-        logger.info("   ✅ Echo Cancellation ENABLED")
+        # Log final configuration
+        logger.info("=" * 80)
+        logger.info("✅ Voice Live API Ready")
+        logger.info(f"   Voice: en-US-FableTurboMultilingualNeural (Azure TTS)")
+        logger.info(f"   VAD: Server VAD (threshold={vad_threshold}, silence={vad_silence_duration_ms}ms)")
+        logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.8)}, max_tokens={audio_settings.get('max-response-tokens', 1500)}")
+        logger.info("=" * 80)
 
-    # Configure VAD (semantic or standard)
-    if use_semantic_vad:
-        session_config["session"]["turn_detection"] = {
-            "type": "azure_semantic_vad",
-            "threshold": vad_threshold,
-            "prefix_padding_ms": vad_prefix_padding_ms,
-            "silence_duration_ms": vad_silence_duration_ms,
-            "remove_filler_words": remove_fillers,
-            "end_of_utterance_detection": {
-                "model": "semantic_detection_v1",
-                "threshold_level": "medium",
-                "timeout_ms": end_utterance_timeout
-            }
-        }
-        logger.info("   ✅ Semantic VAD ENABLED (40-60% better turn detection)")
-    else:
-        session_config["session"]["turn_detection"] = {
-            "type": "server_vad",
-            "threshold": vad_threshold,
-            "prefix_padding_ms": vad_prefix_padding_ms,
-            "silence_duration_ms": vad_silence_duration_ms
-        }
-        logger.info("   ⚪ Standard Server VAD (semantic disabled)")
+        return connection
 
-    # Add audio transcription if enabled
-    if use_transcription:
-        session_config["session"]["input_audio_transcription"] = {
-            "model": "whisper-1",
-            "language": "en"
-        }
-        logger.info("   ✅ Whisper Transcription ENABLED")
-
-    # LLM settings
-    session_config["session"]["temperature"] = float(audio_settings.get("temperature", 0.8))
-    session_config["session"]["max_response_output_tokens"] = int(audio_settings.get("max-response-tokens", 1500))
-
-    # Send session configuration via raw JSON (typed models may not support all features)
-    await connection.send(json.dumps(session_config))
-
-    # Log final configuration
-    logger.info("=" * 80)
-    logger.info("✅ PRODUCTION-GRADE Voice Live API session configured")
-    logger.info(f"   Voice: en-US-FableTurboMultilingualNeural (Azure TTS)")
-    logger.info(f"   VAD: {'Semantic' if use_semantic_vad else 'Standard'} (threshold={vad_threshold}, silence={vad_silence_duration_ms}ms)")
-    logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.8)}, max_tokens={audio_settings.get('max-response-tokens', 1500)}")
-    logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}, FillerRemoval={remove_fillers}")
-    logger.info("=" * 80)
-
-    return connection
+    except Exception as e:
+        logger.error(f"❌ Failed to create Voice Live connection: {e}")
+        logger.error(traceback.format_exc())
+        raise
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FASTAPI APP
