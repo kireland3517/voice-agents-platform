@@ -1,253 +1,30 @@
 # Azure Resources Setup Guide
-## ACS + Voice Live API Migration
+## Voice Live API with SignalWire
 
-**Date:** October 26, 2025
+**Date:** October 30, 2025
+**Status:** Current Production Setup
 **Prerequisites:** Azure subscription with appropriate permissions
 
 ---
 
 ## 📋 Overview
 
-This guide will help you create the following Azure resources:
+This guide will help you create and configure the following Azure resources for the voice agents platform:
 
-1. ✅ **Azure Communication Services** (telephony)
-2. ✅ **ACS Phone Number** (PSTN)
-3. ✅ **Event Grid Subscription** (incoming call webhook)
-4. ✅ **Azure AI Foundry** (Voice Live API) - *Check if exists*
+### Required Azure Resources:
 
-**Existing Resources (Keep):**
-- Azure App Configuration
-- Azure Blob Storage
-- Azure Container Apps (will redeploy new app)
+1. **Azure AI Services** (Voice Live API endpoint)
+2. **Azure App Configuration** (company-specific settings)
+3. **Azure Blob Storage** (instructions, recordings, transcripts)
+4. **Azure Container Apps** (application hosting)
 
----
+### External Service (Not Azure):
 
-## 🔧 Step 1: Azure Communication Services
-
-### Option A: PowerShell
-
-```powershell
-# Variables
-$resourceGroup = "voice-agents"  # Use your existing resource group
-$location = "eastus"  # Choose region where ACS is available
-$acsName = "voice-agents-acs"  # Must be globally unique
-
-# Login to Azure
-Connect-AzAccount
-
-# Set subscription (if you have multiple)
-Set-AzContext -SubscriptionId "your-subscription-id"
-
-# Create Azure Communication Services resource
-New-AzCommunicationService `
-    -ResourceGroupName $resourceGroup `
-    -Name $acsName `
-    -DataLocation "UnitedStates" `
-    -Location $location
-
-# Get connection string
-$connectionString = Get-AzCommunicationServiceKey `
-    -ResourceGroupName $resourceGroup `
-    -Name $acsName `
-    | Select-Object -ExpandProperty PrimaryConnectionString
-
-Write-Host "✅ ACS Connection String:"
-Write-Host $connectionString
-Write-Host ""
-Write-Host "⚠️ SAVE THIS - Add to .env as ACS_CONNECTION_STRING"
-```
-
-### Option B: Azure Portal
-
-1. **Navigate to Azure Portal:** https://portal.azure.com
-2. **Click "Create a resource"**
-3. **Search for:** "Communication Services"
-4. **Click "Create"**
-5. **Fill in details:**
-   - **Subscription:** Your subscription
-   - **Resource Group:** `voice-agents` (existing)
-   - **Resource Name:** `voice-agents-acs` (must be unique)
-   - **Data Location:** United States
-   - **Region:** East US (or region where ACS is available)
-6. **Click "Review + Create"**
-7. **Click "Create"**
-8. **After deployment:**
-   - Go to the resource
-   - Click "Keys" in left menu
-   - **Copy "Primary connection string"**
-   - Save to `.env` as `ACS_CONNECTION_STRING`
-
-### Option C: Azure CLI
-
-```bash
-# Variables
-RESOURCE_GROUP="voice-agents"
-LOCATION="eastus"
-ACS_NAME="voice-agents-acs"
-
-# Login
-az login
-
-# Create ACS resource
-az communication create \
-  --name $ACS_NAME \
-  --resource-group $RESOURCE_GROUP \
-  --data-location "UnitedStates" \
-  --location $LOCATION
-
-# Get connection string
-az communication list-key \
-  --name $ACS_NAME \
-  --resource-group $RESOURCE_GROUP \
-  --query primaryConnectionString \
-  --output tsv
-
-echo "✅ Save this connection string to .env"
-```
-
-**Expected Output:**
-```
-endpoint=https://voice-agents-acs.communication.azure.com/;accesskey=your-key-here
-```
+- **SignalWire** - Phone number and telephony (+1 208-361-7864)
 
 ---
 
-## 📞 Step 2: Get ACS Phone Number
-
-### Option A: PowerShell
-
-```powershell
-# Prerequisites: Install module
-Install-Module -Name Az.Communication -Force -AllowClobber
-
-# Variables
-$resourceGroup = "voice-agents"
-$acsName = "voice-agents-acs"
-$areaCode = "833"  # Toll-free, or use your preferred area code
-
-# Search for available phone numbers
-$searchResult = Find-AzCommunicationPhoneNumber `
-    -CommunicationServiceName $acsName `
-    -ResourceGroupName $resourceGroup `
-    -PhoneNumberType "TollFree" `
-    -AssignmentType "Application" `
-    -PhoneNumberCapability "Inbound","Outbound" `
-    -AreaCode $areaCode `
-    -Quantity 1
-
-Write-Host "Available phone numbers:"
-$searchResult.PhoneNumbers
-
-# Purchase the phone number
-$phoneNumber = $searchResult.PhoneNumbers[0]
-$purchase = New-AzCommunicationPhoneNumber `
-    -CommunicationServiceName $acsName `
-    -ResourceGroupName $resourceGroup `
-    -PhoneNumber $phoneNumber
-
-Write-Host "✅ Phone Number Acquired: $phoneNumber"
-Write-Host "⚠️ SAVE THIS - Add to .env as ACS_PHONE_NUMBER"
-```
-
-### Option B: Azure Portal
-
-1. **Go to your Communication Services resource:** `voice-agents-acs`
-2. **In left menu, click "Phone numbers"**
-3. **Click "+ Get" button**
-4. **Configure:**
-   - **Country/Region:** United States
-   - **Number type:** Toll-free
-   - **Calling:** Make calls ✓
-   - **SMS:** (optional)
-   - **Area code:** Enter preferred area code (e.g., 833)
-5. **Click "Search"**
-6. **Select a number from results**
-7. **Click "Next"**
-8. **Review and click "Place order"**
-9. **Wait for provisioning (1-2 minutes)**
-10. **Copy the phone number**
-11. **Save to `.env` as `ACS_PHONE_NUMBER`**
-
-### Option C: Azure CLI
-
-```bash
-# Variables
-RESOURCE_GROUP="voice-agents"
-ACS_NAME="voice-agents-acs"
-AREA_CODE="833"
-
-# Search for available numbers
-az communication phonenumber list-available \
-  --connection-string $ACS_CONNECTION_STRING \
-  --phone-number-type "tollFree" \
-  --assignment-type "application" \
-  --capabilities "calling" \
-  --area-code $AREA_CODE \
-  --quantity 1
-
-# Purchase (replace with actual number from search)
-az communication phonenumber buy \
-  --connection-string $ACS_CONNECTION_STRING \
-  --phone-number "+18335551234"
-
-echo "✅ Phone number acquired"
-```
-
-**Expected Output:**
-```
-+18335551234
-```
-
----
-
-## 📡 Step 3: Event Grid Subscription
-
-**Important:** This step should be done AFTER deploying your application, as you need the webhook URL.
-
-For now, we'll document the steps. You'll execute this after deployment.
-
-### Portal Steps (Do Later)
-
-1. **Go to your Communication Services resource:** `voice-agents-acs`
-2. **In left menu, click "Events"**
-3. **Click "+ Event Subscription"**
-4. **Fill in details:**
-   - **Name:** `incoming-call-webhook`
-   - **Event Schema:** Event Grid Schema
-   - **Event Types:** Filter to specific events
-     - ✓ Check **IncomingCall**
-   - **Endpoint Type:** Web Hook
-   - **Endpoint:** `https://your-container-app-url/acs/incomingcall`
-     - Replace with your actual Container App URL after deployment
-5. **Click "Create"**
-
-### PowerShell Command (Do Later)
-
-```powershell
-# EXECUTE AFTER APPLICATION DEPLOYMENT
-$resourceGroup = "voice-agents"
-$acsName = "voice-agents-acs"
-$webhookUrl = "https://your-container-app-url/acs/incomingcall"  # Update after deployment
-
-# Get ACS resource ID
-$acsResourceId = (Get-AzCommunicationService `
-    -ResourceGroupName $resourceGroup `
-    -Name $acsName).Id
-
-# Create Event Grid subscription
-New-AzEventGridSubscription `
-    -ResourceId $acsResourceId `
-    -EventSubscriptionName "incoming-call-webhook" `
-    -Endpoint $webhookUrl `
-    -EndpointType "webhook" `
-    -IncludedEventType "Microsoft.Communication.IncomingCall"
-
-Write-Host "✅ Event Grid subscription created"
-```
-
----
-
-## 🤖 Step 4: Azure AI Foundry (Voice Live API)
+## 🤖 Step 1: Azure AI Services (Voice Live API)
 
 ### Check If You Already Have It
 
@@ -358,82 +135,86 @@ After completing all steps, verify you have:
 ### Environment Variables Ready
 
 ```bash
-# Azure Communication Services
-ACS_CONNECTION_STRING="endpoint=https://voice-agents-acs.communication.azure.com/;accesskey=..."
-ACS_PHONE_NUMBER="+18335551234"
+# Azure AI Services - Voice Live API
+AZURE_AI_ENDPOINT="https://your-resource.services.ai.azure.com"
+AZURE_AI_KEY="your-api-key-here"
+AZURE_AI_MODEL="gpt-realtime-mini"
 
-# Azure AI Foundry - Voice Live API
-AZURE_VOICE_LIVE_ENDPOINT="https://voice-agents-ai-foundry.services.ai.azure.com"
-AZURE_VOICE_LIVE_API_KEY="your-api-key-here"
-VOICE_LIVE_MODEL="gpt-realtime-mini"
-
-# Existing Resources (already have)
-APP_CONFIG_CONNECTION_STRING="..."
-AZURE_STORAGE_CONNECTION_STRING="..."
+# Azure Storage & Configuration
+APP_CONFIG_CONNECTION_STRING="Endpoint=https://...;Id=...;Secret=..."
+AZURE_STORAGE_CONNECTION_STRING="DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net"
 BLOB_CONTAINER_NAME="agent-instructions"
-DATA_CONTAINER_NAME="agent-data"
 RECORDINGS_CONTAINER_NAME="call-recordings"
 TRANSCRIPTS_CONTAINER_NAME="call-transcripts"
 
 # Application Settings
-COMPANY_ID="senior-life"
+SAVE_RECORDINGS="true"
+SAVE_TRANSCRIPTS="true"
 LOG_LEVEL="INFO"
 ```
 
 ### Resources Created
 
-- ✅ Azure Communication Services: `voice-agents-acs`
-- ✅ Phone Number: `+1833XXXXXXX`
-- ✅ Event Grid Subscription: (will create after deployment)
-- ✅ Azure AI Foundry: `voice-agents-ai-foundry`
+- ✅ Azure AI Services: `voice-agents-ai-foundry` (endpoint: `.services.ai.azure.com`)
 - ✅ Model Deployment: `gpt-realtime-mini`
+- ✅ Azure App Configuration
+- ✅ Azure Blob Storage (with containers: agent-instructions, call-recordings, call-transcripts)
+- ✅ Azure Container Apps
+- ✅ SignalWire Account with phone number: `+1-208-361-7864`
+
+### Configuration in Azure App Config
+
+For each company (e.g., `senior-life`), create these sections:
+
+```
+{company-id}/basic-info - {"company-name": "...", "greeting": "...", "industry": "..."}
+{company-id}/voice-config - {"voice-style": "..."}
+{company-id}/audio-settings - {"vad-threshold": 0.3, "vad-silence-duration-ms": 800, ...}
+{company-id}/business-hours - {"timezone": "US/Eastern", "days": [0,1,2,3,4], "open-time": "08:30", "close-time": "17:00"}
+{company-id}/contact-info - {"customer-service-phone": "...", "customer-service-email": "..."}
+{company-id}/business-rules - {"callback-timeframe": "...", "transfer-hours": "..."}
+```
 
 ---
 
 ## 📝 Next Steps
 
 1. ✅ Complete this setup guide
-2. ➡️ Build the Python application (see next guide)
-3. ➡️ Deploy to Azure Container Apps
-4. ➡️ Create Event Grid subscription (Step 3, after deployment)
+2. ➡️ Configure SignalWire cXML bin with WebSocket URL
+3. ➡️ Deploy application to Azure Container Apps
+4. ➡️ Upload company instructions to Blob Storage (`{company-id}-instructions.txt`)
 5. ➡️ Test with phone calls
 
 ---
 
 ## 🆘 Troubleshooting
 
-### Issue: Phone number search returns no results
-
-**Solution:** Try different area codes or regions. Some area codes may be unavailable.
-
-```powershell
-# Try multiple area codes
-@("833", "844", "855", "866", "877", "888") | ForEach-Object {
-    Write-Host "Searching area code: $_"
-    Find-AzCommunicationPhoneNumber `
-        -CommunicationServiceName $acsName `
-        -ResourceGroupName $resourceGroup `
-        -PhoneNumberType "TollFree" `
-        -AssignmentType "Application" `
-        -PhoneNumberCapability "Inbound","Outbound" `
-        -AreaCode $_ `
-        -Quantity 1
-}
-```
-
 ### Issue: Azure AI Foundry not available in region
 
-**Solution:** Use **Sweden Central** - it has the best AI Foundry availability.
+**Solution:** Use **Sweden Central** - it has the best AI Foundry/AI Services availability for Voice Live API.
 
 ### Issue: Voice Live API not enabled
 
-**Solution:** Voice Live API may require preview access. Check:
+**Solution:** Voice Live API may require preview access or specific regions. Check:
 - https://learn.microsoft.com/azure/ai-services/speech-service/voice-live
-- Request preview access if needed
+- Ensure you're deploying the `gpt-realtime-mini` model
+- Use Sweden Central region for best availability
 
-### Issue: Event Grid webhook validation fails
+### Issue: Cannot find gpt-realtime-mini model
 
-**Solution:** Ensure your application is deployed and accessible before creating the Event Grid subscription. The webhook must respond to validation events.
+**Solution:**
+1. Go to Azure AI Foundry portal: https://ai.azure.com
+2. Navigate to Model Catalog
+3. Search for "gpt-realtime-mini"
+4. If not available, check if you need to request access or use a different region
+
+### Issue: SignalWire WebSocket connection fails
+
+**Solution:**
+1. Verify Container App is deployed and running
+2. Check that ingress is enabled and set to "External"
+3. Verify WebSocket URL in SignalWire cXML bin matches Container App FQDN
+4. Check Container App logs for connection errors
 
 ---
 

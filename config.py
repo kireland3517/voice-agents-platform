@@ -151,7 +151,11 @@ class ConfigManager:
             # Get business-rules
             business_rules = self.get_json_config_section(company_id, "business-rules")
             config['business-rules'] = business_rules
-            
+
+            # Get business-hours
+            business_hours = self.get_json_config_section(company_id, "business-hours")
+            config['business-hours'] = business_hours
+
             # Get audio-settings
             audio_settings = self.get_json_config_section(company_id, "audio-settings")
             

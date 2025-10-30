@@ -1,13 +1,14 @@
-# SignalWire + Azure OpenAI Realtime API - Architecture Documentation
+# SignalWire + Azure Voice Live API - Architecture Documentation
 
-**Last Updated:** October 28, 2025
+**Last Updated:** October 30, 2025
 
 **Current Stack:**
 - **Telephony:** SignalWire (+1 208-361-7864)
-- **AI Engine:** Azure OpenAI Realtime API (gpt-realtime-mini)
+- **AI Engine:** Azure Voice Live API with Azure TTS (gpt-realtime-mini)
+- **Voice:** en-US-FableTurboMultilingualNeural (Azure TTS)
 - **Hosting:** Azure Container Apps
 - **Audio Format:** PCM 16-bit, 24kHz, Mono
-- **Branch:** `claude/session-011CUYMhLCAz3vtenVZXfP8v`
+- **Branch:** `claude/session-011CUYMhLCAz3vtenVZXfP8v` (Latest: Oct 29, 2025)
 
 ---
 
@@ -33,10 +34,11 @@ graph TB
     end
 
     subgraph "AI/Speech Layer"
-        AzureAI[Azure OpenAI<br/>Realtime API]
-        Endpoint[voice-agent-platform<br/>.cognitiveservices.azure.com]
+        AzureAI[Azure Voice Live API]
+        Endpoint[Azure AI Services<br/>.services.ai.azure.com]
         Model[gpt-realtime-mini]
-        VAD[Server-side VAD<br/>Turn Detection]
+        Voice[Azure TTS Voice<br/>en-US-FableTurboMultilingualNeural]
+        VAD[Server-side VAD<br/>Configurable (0.3, 800ms, 200ms)]
     end
 
     subgraph "Function Calling Services"
@@ -62,10 +64,11 @@ graph TB
     WSHandler --> App
     App --> AudioForward
 
-    AudioForward <-->|WSS<br/>PCM Audio| AzureAI
+    AudioForward <-->|Voice Live SDK<br/>PCM Audio| AzureAI
     AzureAI --> Endpoint
     Endpoint --> Model
-    Model --> VAD
+    Model --> Voice
+    Voice --> VAD
 
     Model -->|Function Calls| SurnameFn
     Model -->|Function Calls| ZipcodeFn
@@ -95,7 +98,7 @@ sequenceDiagram
     participant Caller
     participant SignalWire
     participant ContainerApp
-    participant AzureOpenAI
+    participant VoiceLive as Azure Voice Live
     participant Functions
 
     Caller->>SignalWire: Dials +1-208-361-7864
@@ -103,44 +106,44 @@ sequenceDiagram
     SignalWire->>ContainerApp: WebSocket CONNECT<br/>wss://.../voice/senior-life
     ContainerApp->>ContainerApp: Accept connection
 
-    ContainerApp->>AzureOpenAI: Connect to Realtime API<br/>wss://...cognitiveservices.azure.com
-    AzureOpenAI->>ContainerApp: Session created
+    ContainerApp->>VoiceLive: Connect via Voice Live SDK<br/>azure.ai.voicelive.aio.connect()
+    VoiceLive->>ContainerApp: Connection established
 
-    ContainerApp->>AzureOpenAI: Send session.update<br/>(Tools, VAD settings, Cedar's script)
-    AzureOpenAI->>ContainerApp: Session ready
+    ContainerApp->>VoiceLive: session.update()<br/>(Azure TTS voice, VAD settings, instructions)
+    VoiceLive->>ContainerApp: Session ready
 
     SignalWire->>ContainerApp: Stream start event<br/>(caller ID, format)
-    ContainerApp->>AzureOpenAI: Send context<br/>(date, time, transfer window)
+    ContainerApp->>VoiceLive: Add context to instructions<br/>(date, time, business hours, caller ID)
 
     Note over ContainerApp: Wait 1.5s for<br/>audio stream establishment
 
-    ContainerApp->>AzureOpenAI: response.create<br/>(trigger greeting)
-    AzureOpenAI->>ContainerApp: Audio delta (greeting)
+    ContainerApp->>VoiceLive: response.create()<br/>(trigger greeting)
+    VoiceLive->>ContainerApp: RESPONSE_AUDIO_DELTA (greeting)
     ContainerApp->>SignalWire: Forward audio chunks
     SignalWire->>Caller: Play greeting
 
     loop Conversation
         Caller->>SignalWire: Speaks
         SignalWire->>ContainerApp: Audio data (base64)
-        ContainerApp->>AzureOpenAI: input_audio_buffer.append
+        ContainerApp->>VoiceLive: input_audio_buffer.append(audio)
 
-        AzureOpenAI->>AzureOpenAI: VAD detects speech end
+        VoiceLive->>VoiceLive: Server VAD detects speech end
 
         alt Caller provides last name
-            AzureOpenAI->>ContainerApp: function_call: verify_surname
+            VoiceLive->>ContainerApp: function_call: verify_surname
             ContainerApp->>Functions: Phonetic lookup
             Functions->>ContainerApp: Spelling matches
-            ContainerApp->>AzureOpenAI: function_call_output
+            ContainerApp->>VoiceLive: function_call_output
         end
 
         alt Caller provides ZIP code
-            AzureOpenAI->>ContainerApp: function_call: lookup_zipcode
+            VoiceLive->>ContainerApp: function_call: lookup_zipcode
             ContainerApp->>Functions: ZIP lookup
             Functions->>ContainerApp: City, State
-            ContainerApp->>AzureOpenAI: function_call_output
+            ContainerApp->>VoiceLive: function_call_output
         end
 
-        AzureOpenAI->>ContainerApp: Audio response
+        VoiceLive->>ContainerApp: RESPONSE_AUDIO_DELTA
         ContainerApp->>SignalWire: Forward audio
         SignalWire->>Caller: Play response
     end
@@ -148,7 +151,7 @@ sequenceDiagram
     Caller->>SignalWire: Hangs up
     SignalWire->>ContainerApp: Stream stop event
     ContainerApp->>ContainerApp: Save recordings & transcript
-    ContainerApp->>AzureOpenAI: Close connection
+    ContainerApp->>VoiceLive: Connection closes (automatic)
 ```
 
 ---
@@ -244,8 +247,8 @@ sequenceDiagram
 ### Environment Variables (Azure Container App)
 
 ```bash
-# Azure OpenAI Settings
-AZURE_AI_ENDPOINT=https://voice-agent-platform.cognitiveservices.azure.com
+# Azure Voice Live API Settings
+AZURE_AI_ENDPOINT=https://your-resource.services.ai.azure.com
 AZURE_AI_KEY=<secret-reference>
 AZURE_AI_MODEL=gpt-realtime-mini
 
@@ -314,14 +317,26 @@ agent-data/
 
 ## 6. Voice Activity Detection (VAD) Settings
 
-### Current Configuration
+### Current Configuration (Configurable via Azure App Config)
+
+VAD settings are now configurable per company via the `{company-id}/audio-settings` section:
+
 ```python
-"turn_detection": {
-    "type": "server_vad",
-    "threshold": 0.3,              # Sensitivity (0.0-1.0)
-    "prefix_padding_ms": 200,      # Pre-speech buffer
-    "silence_duration_ms": 800     # Silence for turn end
-}
+# From config.py - Default values
+"vad-threshold": 0.3,              # Sensitivity (0.0-1.0)
+"vad-prefix-padding-ms": 200,      # Pre-speech buffer
+"vad-silence-duration-ms": 800,    # Silence for turn end
+"temperature": 0.8,
+"max-response-tokens": 4096
+```
+
+**Applied in Voice Live SDK:**
+```python
+turn_detection_config = ServerVad(
+    threshold=float(audio_settings.get('vad-threshold', 0.3)),
+    prefix_padding_ms=int(audio_settings.get('vad-prefix-padding-ms', 200)),
+    silence_duration_ms=int(audio_settings.get('vad-silence-duration-ms', 800))
+)
 ```
 
 ### Tuning Guide
@@ -392,19 +407,20 @@ az containerapp revision list \
 
 ---
 
-## 8. Key Differences from ACS Architecture
+## 8. Key Differences from Previous Architectures
 
-| Aspect | ACS (Old) | SignalWire (New) |
+| Aspect | OpenAI Realtime (Old) | Voice Live API (Current) |
 |--------|-----------|------------------|
-| **Telephony Provider** | Azure Communication Services | SignalWire |
-| **Phone Number** | +1-508-365-3436 | +1-208-361-7864 |
-| **Call Configuration** | Python SDK (MediaStreamingOptions) | cXML bin |
-| **WebSocket Protocol** | ACS-specific JSON format | SignalWire Media Streams |
-| **Audio Format Control** | `AudioFormat.PCM24_K_MONO` | `codec="L16@24000h"` |
-| **Connection Flow** | ACS → EventGrid → Webhook → WebSocket | SignalWire → cXML → WebSocket |
-| **Bidirectional Audio** | Complex (required specific JSON schema) | Simple (documented protocol) |
-| **Function Calling** | Not implemented | ✅ Surname + Zipcode verification |
-| **Deployment Complexity** | High (multiple event handlers) | Low (single WebSocket handler) |
+| **SDK** | Direct WebSocket (websockets) | Azure Voice Live SDK (azure-ai-voicelive) |
+| **Connection Method** | Manual WebSocket URL construction | SDK `connect()` with typed models |
+| **Voice Options** | 6 OpenAI voices (alloy, shimmer, etc.) | 600+ Azure TTS Neural voices |
+| **Voice Quality** | Inconsistent prosody | Consistent Azure TTS with SSML support |
+| **Current Voice** | N/A (OpenAI voices) | en-US-FableTurboMultilingualNeural |
+| **Configuration** | JSON strings via WebSocket | Typed Python models (RequestSession, ServerVad) |
+| **Audio Sending** | Manual JSON: `{"type": "input_audio_buffer.append"}` | SDK method: `input_audio_buffer.append(audio)` |
+| **Event Handling** | JSON parsing of event types | Typed ServerEventType enums |
+| **VAD Configuration** | Hardcoded in session config | ✅ Configurable per company via Azure App Config |
+| **Business Hours** | Hardcoded US/Eastern M-F | ✅ Configurable per company (timezone, days, hours, overnight support) |
 
 ---
 
@@ -523,10 +539,20 @@ az containerapp logs show \
 
 **Git Repository:** `voice-agents-platform`
 **Active Branch:** `claude/session-011CUYMhLCAz3vtenVZXfP8v`
-**Last Updated:** October 28, 2025
+**Last Updated:** October 30, 2025
+**Current Version:** 14.0 - Azure Voice Live API
+
+**Key Features:**
+- Azure Voice Live SDK integration
+- Azure TTS voices with consistent prosody
+- Configurable VAD settings per company
+- Configurable business hours with overnight support
+- Surname verification and ZIP lookup
+- Call recordings and transcripts
 
 For questions or issues, check:
 1. This documentation
 2. Application logs (`az containerapp logs show`)
 3. Azure Portal health checks
 4. SignalWire dashboard for call metrics
+5. Voice Live API documentation: https://learn.microsoft.com/azure/ai-services/speech-service/voice-live
