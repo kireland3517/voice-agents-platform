@@ -170,6 +170,20 @@ class ConfigManager:
                 audio_settings['temperature'] = 0.8
             if not audio_settings.get('max-response-tokens'):
                 audio_settings['max-response-tokens'] = 1500  # OPTIMIZED: Reduced from 4096 for 20% latency improvement
+
+            # DEMO MODE: Enable all advanced features by default
+            if not audio_settings.get('enable-semantic-vad'):
+                audio_settings['enable-semantic-vad'] = True  # 40-60% better turn detection
+            if not audio_settings.get('enable-noise-suppression'):
+                audio_settings['enable-noise-suppression'] = True  # 60% noise reduction
+            if not audio_settings.get('enable-echo-cancellation'):
+                audio_settings['enable-echo-cancellation'] = True  # Feedback prevention
+            if not audio_settings.get('enable-audio-transcription'):
+                audio_settings['enable-audio-transcription'] = True  # Whisper quality
+            if not audio_settings.get('remove-filler-words'):
+                audio_settings['remove-filler-words'] = True  # Auto-remove "uh", "um"
+            if not audio_settings.get('vad-end-utterance-timeout-ms'):
+                audio_settings['vad-end-utterance-timeout-ms'] = 1000  # Prevents hanging
             
             config['audio-settings'] = audio_settings
             
@@ -201,6 +215,20 @@ class ConfigManager:
             audio_settings['temperature'] = 0.8
         if not audio_settings.get('max-response-tokens'):
             audio_settings['max-response-tokens'] = 1500  # OPTIMIZED: Reduced from 4096 for 20% latency improvement
+
+        # DEMO MODE: Enable all advanced features by default
+        if not audio_settings.get('enable-semantic-vad'):
+            audio_settings['enable-semantic-vad'] = True  # 40-60% better turn detection
+        if not audio_settings.get('enable-noise-suppression'):
+            audio_settings['enable-noise-suppression'] = True  # 60% noise reduction
+        if not audio_settings.get('enable-echo-cancellation'):
+            audio_settings['enable-echo-cancellation'] = True  # Feedback prevention
+        if not audio_settings.get('enable-audio-transcription'):
+            audio_settings['enable-audio-transcription'] = True  # Whisper quality
+        if not audio_settings.get('remove-filler-words'):
+            audio_settings['remove-filler-words'] = True  # Auto-remove "uh", "um"
+        if not audio_settings.get('vad-end-utterance-timeout-ms'):
+            audio_settings['vad-end-utterance-timeout-ms'] = 1000  # Prevents hanging
 
         return audio_settings
     
