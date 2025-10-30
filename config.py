@@ -151,17 +151,21 @@ class ConfigManager:
             # Get business-rules
             business_rules = self.get_json_config_section(company_id, "business-rules")
             config['business-rules'] = business_rules
-            
+
+            # Get business-hours
+            business_hours = self.get_json_config_section(company_id, "business-hours")
+            config['business-hours'] = business_hours
+
             # Get audio-settings
             audio_settings = self.get_json_config_section(company_id, "audio-settings")
             
             # Apply defaults for audio settings if not present
             if not audio_settings.get('vad-threshold'):
-                audio_settings['vad-threshold'] = 0.5
+                audio_settings['vad-threshold'] = 0.3  # Lower = more sensitive to interruptions
             if not audio_settings.get('vad-silence-duration-ms'):
-                audio_settings['vad-silence-duration-ms'] = 500
+                audio_settings['vad-silence-duration-ms'] = 800  # How long to wait before turn-end
             if not audio_settings.get('vad-prefix-padding-ms'):
-                audio_settings['vad-prefix-padding-ms'] = 300
+                audio_settings['vad-prefix-padding-ms'] = 200  # Audio captured before speech starts
             if not audio_settings.get('temperature'):
                 audio_settings['temperature'] = 0.8
             if not audio_settings.get('max-response-tokens'):
@@ -188,11 +192,11 @@ class ConfigManager:
         
         # Apply defaults if not present
         if not audio_settings.get('vad-threshold'):
-            audio_settings['vad-threshold'] = 0.5
+            audio_settings['vad-threshold'] = 0.3  # Lower = more sensitive to interruptions
         if not audio_settings.get('vad-silence-duration-ms'):
-            audio_settings['vad-silence-duration-ms'] = 500
+            audio_settings['vad-silence-duration-ms'] = 800  # How long to wait before turn-end
         if not audio_settings.get('vad-prefix-padding-ms'):
-            audio_settings['vad-prefix-padding-ms'] = 300
+            audio_settings['vad-prefix-padding-ms'] = 200  # Audio captured before speech starts
         if not audio_settings.get('temperature'):
             audio_settings['temperature'] = 0.8
         if not audio_settings.get('max-response-tokens'):

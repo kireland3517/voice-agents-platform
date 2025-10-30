@@ -1,14 +1,14 @@
 # Multi-Tenant Voice Agent Platform - Technical Architecture
 
-**Version:** 1.0  
-**Date:** October 23, 2025  
-**Status:** Pre-Demo Development
+**Version:** 2.0
+**Date:** October 30, 2025
+**Status:** Production Ready (Voice Live API)
 
 ---
 
 ## System Overview
 
-Real-time, human-sounding AI voice agent platform supporting multiple companies with isolated configurations. Enables natural voice conversations via SignalWire phone integration and Azure OpenAI Realtime API.
+Real-time, human-sounding AI voice agent platform supporting multiple companies with isolated configurations. Enables natural voice conversations via SignalWire phone integration and Azure Voice Live API with Azure TTS voices for consistent prosody and SSML support.
 
 ---
 
@@ -21,10 +21,10 @@ Real-time, human-sounding AI voice agent platform supporting multiple companies 
 
 **Content:**
 - `basic-info` - Company identity (name, greeting, industry)
-- `voice-config` - Voice preferences (style, tone)
-- `business-hours` - Timezone, days, open/close times
+- `voice-config` - Voice preferences (Azure TTS voice selection)
+- `business-hours` - Timezone, days, open/close times (configurable per company)
 - `contact-info` - Phone, email for agent reference
-- `audio-settings` - VAD threshold, silence duration, temperature
+- `audio-settings` - VAD threshold (0.3), silence duration (800ms), prefix padding (200ms), temperature (0.8), max tokens (4096)
 - `business-rules` - Callback timeframes, transfer policies
 - Feature flags - Enable/disable recordings, transcripts
 
@@ -55,8 +55,8 @@ Real-time, human-sounding AI voice agent platform supporting multiple companies 
 **Purpose:** Secrets, endpoints, and deployment-specific settings
 
 **Content:**
-- Azure OpenAI endpoint and API key
-- Azure OpenAI model deployment name
+- Azure AI endpoint and API key (Voice Live API)
+- Azure AI model deployment name (gpt-realtime-mini)
 - App Configuration connection string
 - Blob Storage connection string
 - Container names (instructions, recordings, transcripts)
@@ -86,55 +86,48 @@ Real-time, human-sounding AI voice agent platform supporting multiple companies 
 
 ### Service Layer
 
-**services/config.py (ConfigManager)**
+**config.py (ConfigManager)**
 - Azure App Configuration client
 - Blob Storage client initialization
-- Fetch hierarchical JSON sections
+- Fetch hierarchical JSON sections (basic-info, voice-config, audio-settings, business-hours, contact-info, business-rules)
 - Fetch detailed instructions from Blob
 - Save recordings and transcripts
 - Config validation and defaults
+- Apply configurable VAD settings
 
-**services/prompt_builder.py**
-- Build system instructions from config + blob
-- Build call context messages (date, time, business hours, caller ID)
-- Assemble session configuration for Azure API
-- Format instructions for model consumption
+**zipcode_service.py (ZipcodeService)**
+- ZIP code lookup from us-zipcodes.csv
+- City and state resolution
+- Async HTTP client for geocoding
 
-**services/turn_manager.py**
-- Track conversation turns
-- Detect turn boundaries
-- Manage response state
-- Handle interruptions
-- Coordinate audio flow control
-
-**services/storage_client.py**
-- WAV file creation from PCM buffers
-- Upload recordings to Blob Storage
-- Upload transcripts to Blob Storage
-- File naming conventions
-- Error handling for storage operations
+**surname_verifier.py**
+- Phonetic surname matching
+- LLM prompt generation for spelling confirmation
+- Candidate surname suggestions
 
 ### Handler Layer
 
-**handlers/audio_bridge.py**
-- WebSocket connection management (SignalWire ↔ Azure)
+**app.py - Main Application**
+- voice_bridge() - WebSocket handler for SignalWire connections
+- send_signalwire_audio_to_voicelive() - Audio forwarding loop
+- handle_voicelive_event() - Voice Live API event processing
+- create_voicelive_connection() - Voice Live SDK initialization with Azure TTS voice
 - Call session lifecycle (start, active, end)
-- Audio streaming in both directions
+- Audio streaming in both directions (PCM16, 24kHz)
 - Event routing and handling
-- Greeting trigger logic
-- Call context injection
-- Barge-in detection and cancellation
+- Greeting trigger logic with 1.5s delay
+- Call context injection (date, time, business hours, caller ID)
+- Business hours detection with overnight support
 - Recording buffer management
 
 ### Model Layer
 
-**models/call_session.py**
-- CallSession class definition
+**CallSession class (app.py)**
 - Session state tracking
-- Recording buffers (caller and AI audio)
+- Recording buffers (caller and AI audio as PCM16)
 - Transcript accumulation
-- Greeting completion flag
-- WebSocket reference storage
+- Finalize and save_to_storage methods
+- WAV file creation from PCM buffers
 
 ### Supporting Modules
 
@@ -178,10 +171,17 @@ Real-time, human-sounding AI voice agent platform supporting multiple companies 
 - Agent instructions
 - Company branding
 
-### Azure OpenAI Realtime API
-**Model:** gpt-realtime-mini (2025-10-06)
+### Azure Voice Live API
+**SDK:** azure-ai-voicelive
+**Model:** gpt-realtime-mini
+**Voice:** en-US-FableTurboMultilingualNeural (Azure TTS)
 **Audio:** PCM16, 24kHz, mono, bidirectional streaming
-**Features:** Voice Activity Detection, interruption handling, session configuration
+**Features:**
+- Server-side VAD (configurable per company)
+- Azure TTS voices with SSML support
+- Consistent prosody throughout conversations
+- Natural conversation flow
+- Interruption handling
 
 ---
 
@@ -190,28 +190,34 @@ Real-time, human-sounding AI voice agent platform supporting multiple companies 
 ### Call Initiation
 1. SignalWire receives phone call
 2. SignalWire connects to WebSocket `/voice/{company-id}`
-3. Platform fetches company config from App Configuration
+3. Platform fetches company config from App Configuration (with 5-minute cache)
 4. Platform fetches detailed instructions from Blob Storage
-5. Platform establishes Azure OpenAI connection
-6. Platform injects call context (date, time, business hours, caller ID)
-7. Platform triggers initial greeting
+5. Platform establishes Azure Voice Live API connection
+6. Platform configures session with Azure TTS voice (en-US-FableTurboMultilingualNeural)
+7. Platform applies configurable VAD settings from audio-settings config
+8. Platform injects call context (date, time, business hours, caller ID)
+9. Platform waits 1.5s for audio stream establishment
+10. Platform triggers initial greeting via response.create()
 
 ### Active Call
-1. SignalWire streams caller audio (PCM16) to platform
-2. Platform forwards audio to Azure OpenAI
-3. Azure OpenAI processes and generates response
-4. Platform receives AI audio and forwards to SignalWire
-5. Platform buffers both audio streams for recording
-6. Platform tracks transcript in real-time
-7. Platform detects barge-in and cancels AI response if needed
+1. SignalWire streams caller audio (PCM16, 24kHz) to platform
+2. Platform forwards audio to Voice Live API via input_audio_buffer.append()
+3. Voice Live API processes with server-side VAD
+4. Voice Live API generates response with Azure TTS voice
+5. Platform receives audio via ServerEventType.RESPONSE_AUDIO_DELTA events
+6. Platform forwards AI audio to SignalWire
+7. Platform buffers both audio streams for recording
+8. Platform tracks transcript in real-time (caller and AI)
+9. Voice Live API's VAD handles turn detection and interruptions
 
 ### Call Termination
 1. SignalWire sends stop event
-2. Platform creates WAV files from audio buffers
-3. Platform uploads recordings to Blob Storage
-4. Platform uploads transcript to Blob Storage
-5. Platform closes Azure OpenAI connection
-6. Platform cleans up session state
+2. Platform finalizes call session
+3. Platform creates WAV files from PCM audio buffers
+4. Platform uploads recordings to Blob Storage (caller.wav and ai.wav)
+5. Platform uploads transcript to Blob Storage (JSON with timestamps)
+6. Voice Live API connection closes automatically
+7. Platform cleans up session state
 
 ---
 

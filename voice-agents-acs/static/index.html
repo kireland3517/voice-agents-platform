@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Agent - Web Test Client</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        .status.disconnected {
+            background: #fee;
+            color: #c33;
+        }
+
+        .status.connecting {
+            background: #ffeaa7;
+            color: #d63031;
+        }
+
+        .status.connected {
+            background: #d4f8d4;
+            color: #27ae60;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c0392b;
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .info {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .info strong {
+            color: #333;
+        }
+
+        .icon {
+            font-size: 24px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎙️ Voice Agent Test Client</h1>
+        <p class="subtitle">ACS + Voice Live API Integration</p>
+
+        <div id="status" class="status disconnected">
+            <span class="icon">🔴</span> Disconnected
+        </div>
+
+        <button id="startBtn" class="btn-primary">
+            <span class="icon">▶️</span> Start Talking to Agent
+        </button>
+
+        <button id="stopBtn" class="btn-danger" style="display: none;">
+            <span class="icon">⏹️</span> Stop Conversation
+        </button>
+
+        <div class="info">
+            <strong>ℹ️ Instructions:</strong><br>
+            • Click "Start" to begin<br>
+            • Allow microphone access<br>
+            • Speak naturally with the AI agent<br>
+            • Click "Stop" to end the conversation
+        </div>
+    </div>
+
+    <script>
+        let websocket = null;
+        let audioContext = null;
+        let mediaStream = null;
+        let processor = null;
+
+        const statusDiv = document.getElementById('status');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+
+        function updateStatus(text, className) {
+            statusDiv.textContent = text;
+            statusDiv.className = `status ${className}`;
+        }
+
+        async function startConversation() {
+            try {
+                console.log('🚀 Starting conversation...');
+                updateStatus('🟡 Connecting...', 'connecting');
+                startBtn.disabled = true;
+
+                // Get microphone access
+                console.log('🎤 Requesting microphone access...');
+                mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                console.log('✅ Microphone access granted');
+
+                // Create audio context
+                audioContext = new AudioContext({ sampleRate: 24000 });
+                console.log('🔊 AudioContext created, state:', audioContext.state, 'sample rate:', audioContext.sampleRate);
+                const source = audioContext.createMediaStreamSource(mediaStream);
+
+                // Create processor for capturing audio
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+                processor.onaudioprocess = (e) => {
+                    if (websocket && websocket.readyState === WebSocket.OPEN) {
+                        const audioData = e.inputBuffer.getChannelData(0);
+                        const pcm16 = convertToPCM16(audioData);
+                        websocket.send(pcm16);
+                    }
+                };
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+                console.log('🎙️ Audio pipeline connected');
+
+                // Connect to WebSocket
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/web/ws`;
+                console.log('🔌 Connecting to WebSocket:', wsUrl);
+                websocket = new WebSocket(wsUrl);
+
+                websocket.onopen = () => {
+                    console.log('✅ WebSocket connected');
+                    updateStatus('🟢 Connected - Speak now!', 'connected');
+                    startBtn.style.display = 'none';
+                    stopBtn.style.display = 'block';
+                };
+
+                websocket.onmessage = async (event) => {
+                    console.log('📥 Received message, type:', event.data.constructor.name, 'size:', event.data.byteLength || event.data.size);
+
+                    // Handle raw PCM audio from AI
+                    try {
+                        if (event.data instanceof ArrayBuffer) {
+                            await playAudio(event.data);
+                        } else if (event.data instanceof Blob) {
+                            const arrayBuffer = await event.data.arrayBuffer();
+                            await playAudio(arrayBuffer);
+                        } else {
+                            console.warn('⚠️ Unexpected message type:', typeof event.data);
+                        }
+                    } catch (error) {
+                        console.error('❌ Error playing audio:', error);
+                    }
+                };
+
+                websocket.onerror = (error) => {
+                    console.error('❌ WebSocket error:', error);
+                    updateStatus('🔴 Connection Error', 'disconnected');
+                };
+
+                websocket.onclose = (event) => {
+                    console.log('🔌 WebSocket closed, code:', event.code, 'reason:', event.reason);
+                    updateStatus('🔴 Disconnected', 'disconnected');
+                    cleanup();
+                };
+
+            } catch (error) {
+                console.error('Error starting conversation:', error);
+                updateStatus('🔴 Error: ' + error.message, 'disconnected');
+                startBtn.disabled = false;
+            }
+        }
+
+        function stopConversation() {
+            if (websocket) {
+                websocket.close();
+            }
+            cleanup();
+        }
+
+        function cleanup() {
+            if (processor) {
+                processor.disconnect();
+                processor = null;
+            }
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            websocket = null;
+
+            startBtn.style.display = 'block';
+            stopBtn.style.display = 'none';
+            startBtn.disabled = false;
+            updateStatus('🔴 Disconnected', 'disconnected');
+        }
+
+        function convertToPCM16(float32Array) {
+            const int16Array = new Int16Array(float32Array.length);
+            for (let i = 0; i < float32Array.length; i++) {
+                const s = Math.max(-1, Math.min(1, float32Array[i]));
+                int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            return int16Array.buffer;
+        }
+
+        // Audio queue for smooth playback
+        let audioQueue = [];
+        let isPlaying = false;
+        let nextStartTime = 0;
+
+        async function playAudio(arrayBuffer) {
+            if (!audioContext) {
+                console.warn('⚠️ No audio context available');
+                return;
+            }
+
+            try {
+                console.log('🔊 Received audio chunk, size:', arrayBuffer.byteLength, 'bytes');
+
+                // Resume audio context if suspended (browser autoplay policy)
+                if (audioContext.state === 'suspended') {
+                    console.log('▶️ Resuming audio context...');
+                    await audioContext.resume();
+                }
+
+                // Inspect first few bytes to understand format
+                const firstBytes = new Uint8Array(arrayBuffer.slice(0, 16));
+                console.log('📊 First 16 bytes:', Array.from(firstBytes).map(b => b.toString(16).padStart(2, '0')).join(' '));
+
+                // Try to interpret as PCM16
+                const pcm16 = new Int16Array(arrayBuffer);
+                const maxSample = Math.max(...pcm16.map(Math.abs));
+                console.log('📊 PCM16 samples:', pcm16.length, 'first sample:', pcm16[0], 'max:', maxSample);
+
+                // Apply smart normalization to boost quiet audio without clipping
+                // Voice Live API sends low amplitude audio, so we normalize each chunk
+                const TARGET_AMPLITUDE = 0.5;  // Target 50% of max to avoid clipping/crackling
+                const MIN_PEAK = 1000;  // Don't amplify near-silence chunks
+                const MAX_GAIN = 3.0;  // Limit maximum gain to prevent over-amplification
+
+                const float32 = new Float32Array(pcm16.length);
+
+                if (maxSample > MIN_PEAK) {
+                    // Calculate gain to reach target amplitude
+                    let gain = (TARGET_AMPLITUDE * 32768) / maxSample;
+                    // Limit gain to prevent excessive amplification
+                    gain = Math.min(gain, MAX_GAIN);
+                    console.log('🔊 Normalizing audio: peak =', maxSample, ', gain =', gain.toFixed(2) + 'x');
+
+                    for (let i = 0; i < pcm16.length; i++) {
+                        float32[i] = (pcm16[i] / 32768.0) * gain;
+                    }
+                } else {
+                    // Near silence - just convert without gain
+                    console.log('🔇 Near silence chunk, skipping gain');
+                    for (let i = 0; i < pcm16.length; i++) {
+                        float32[i] = pcm16[i] / 32768.0;
+                    }
+                }
+
+                // Create audio buffer with 24kHz sample rate (matching Voice Live API output)
+                const audioBuffer = audioContext.createBuffer(1, float32.length, 24000);
+                audioBuffer.getChannelData(0).set(float32);
+
+                // Queue for playback
+                audioQueue.push(audioBuffer);
+                if (!isPlaying) {
+                    playNextInQueue();
+                }
+
+                console.log('✅ Audio chunk queued, duration:', audioBuffer.duration.toFixed(3), 'seconds');
+            } catch (error) {
+                console.error('❌ Failed to process audio:', error);
+                console.error('Error stack:', error.stack);
+            }
+        }
+
+        function playNextInQueue() {
+            if (audioQueue.length === 0) {
+                isPlaying = false;
+                nextStartTime = 0;
+                return;
+            }
+
+            isPlaying = true;
+            const audioBuffer = audioQueue.shift();
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+
+            const currentTime = audioContext.currentTime;
+            const startTime = Math.max(currentTime, nextStartTime);
+            source.start(startTime);
+            nextStartTime = startTime + audioBuffer.duration;
+
+            console.log('▶️ Playing audio at', startTime.toFixed(3), 's, duration:', audioBuffer.duration.toFixed(3), 's');
+
+            source.onended = () => {
+                playNextInQueue();
+            };
+        }
+
+        startBtn.addEventListener('click', startConversation);
+        stopBtn.addEventListener('click', stopConversation);
+    </script>
+</body>
+</html>
