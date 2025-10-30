@@ -29,7 +29,6 @@ from azure.ai.voicelive.models import (
     RequestSession,
     ServerVad,
     AzureSemanticVad,
-    AzureSemanticDetection,
     AudioNoiseReduction,
     AudioEchoCancellation,
     AudioInputTranscriptionOptions,
@@ -37,8 +36,7 @@ from azure.ai.voicelive.models import (
     Modality,
     InputAudioFormat,
     OutputAudioFormat,
-    ServerEventType,
-    EouThresholdLevel
+    ServerEventType
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -301,7 +299,6 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         vad_threshold = float(audio_settings.get('vad-threshold', 0.3))
         vad_prefix_padding_ms = int(audio_settings.get('vad-prefix-padding-ms', 200))
         vad_silence_duration_ms = int(audio_settings.get('vad-silence-duration-ms', 500))
-        end_utterance_timeout = int(audio_settings.get('vad-end-utterance-timeout-ms', 1000))
 
         # Feature flags (all TRUE by default in demo mode)
         use_semantic_vad = audio_settings.get('enable-semantic-vad', True)
@@ -319,18 +316,12 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
 
         # Configure VAD (semantic or standard)
         if use_semantic_vad:
-            # Use Semantic VAD with end-of-utterance detection
-            eou_detection = AzureSemanticDetection(
-                model="semantic_detection_v1",
-                threshold_level=EouThresholdLevel.MEDIUM,
-                timeout_ms=end_utterance_timeout
-            )
+            # Use Semantic VAD with filler word removal
             turn_detection_config = AzureSemanticVad(
                 threshold=vad_threshold,
                 prefix_padding_ms=vad_prefix_padding_ms,
                 silence_duration_ms=vad_silence_duration_ms,
-                remove_filler_words=remove_fillers,
-                end_of_utterance_detection=eou_detection
+                remove_filler_words=remove_fillers
             )
             logger.info(f"✅ Semantic VAD ENABLED (threshold={vad_threshold}, silence={vad_silence_duration_ms}ms, filler_removal={remove_fillers})")
         else:
