@@ -86,13 +86,13 @@ logger.info("=" * 80)
 logger.info(f"Azure Endpoint: {AZURE_AI_ENDPOINT}")
 logger.info(f"Model: {AZURE_AI_MODEL}")
 logger.info(f"Audio Format: PCM16 24kHz passthrough")
-logger.info(f"Voice: Azure TTS (en-US-FableTurboMultilingualNeural)")
+logger.info(f"Voices: Per-company Azure TTS voices (configurable)")
 logger.info(f"Save Recordings: {SAVE_RECORDINGS}")
 logger.info(f"Save Transcripts: {SAVE_TRANSCRIPTS}")
 logger.info("=" * 80)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# VOICE MAP
+# VOICE MAP - OpenAI voice names to Azure TTS voices
 # ──────────────────────────────────────────────────────────────────────────────
 VOICE_MAP = {
     'alloy': 'alloy',
@@ -104,6 +104,19 @@ VOICE_MAP = {
     'sage': 'sage',
     'verse': 'verse',
     'cedar': 'cedar',
+}
+
+# Azure TTS voice mappings for Voice Live API
+AZURE_VOICE_MAP = {
+    'alloy': 'en-US-AndrewNeural',           # Warm, friendly male voice
+    'shimmer': 'en-US-JennyNeural',          # Friendly, warm female voice
+    'echo': 'en-US-GuyNeural',               # Professional male voice
+    'ash': 'en-US-EmmaNeural',               # Clear, articulate female voice
+    'ballad': 'en-US-DavisNeural',           # Conversational male voice
+    'coral': 'en-US-AvaNeural',              # Conversational female voice
+    'sage': 'en-US-BrianNeural',             # Clear, professional male voice
+    'verse': 'en-US-AriaNeural',             # Friendly, expressive female voice
+    'cedar': 'en-US-FableTurboMultilingualNeural',  # Low-latency conversational male (current default)
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -307,12 +320,13 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         use_transcription = audio_settings.get('enable-audio-transcription', True)
         remove_fillers = audio_settings.get('remove-filler-words', True)
 
-        # Configure Azure TTS voice
+        # Configure Azure TTS voice based on company configuration
+        azure_voice_name = AZURE_VOICE_MAP.get(voice_name, "en-US-FableTurboMultilingualNeural")
         voice_config = AzureStandardVoice(
-            name="en-US-FableTurboMultilingualNeural",
+            name=azure_voice_name,
             type="azure-standard"
         )
-        logger.info("✅ Azure TTS Voice configured: en-US-FableTurboMultilingualNeural")
+        logger.info(f"✅ Azure TTS Voice configured: {azure_voice_name} (mapped from: {voice_name})")
 
         # Configure VAD (semantic or standard)
         if use_semantic_vad:
@@ -373,7 +387,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         # Log final configuration
         logger.info("=" * 80)
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready")
-        logger.info(f"   Voice: en-US-FableTurboMultilingualNeural (Azure TTS)")
+        logger.info(f"   Voice: {azure_voice_name} (Azure TTS)")
         logger.info(f"   VAD: {'Semantic' if use_semantic_vad else 'Server'} (threshold={vad_threshold}, silence={vad_silence_duration_ms}ms)")
         logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.8)}, max_tokens={audio_settings.get('max-response-tokens', 1500)}")
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}, FillerRemoval={remove_fillers}")
@@ -396,15 +410,18 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "15.0 - Optimized (Research-backed config)",
+        "version": "16.0 - Per-company voices with advanced features",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
-        "voice": "en-US-FableTurboMultilingualNeural (Azure TTS)",
+        "voices": "Per-company Azure TTS voices (configurable)",
+        "available_voices": list(AZURE_VOICE_MAP.keys()),
         "audio_format": "PCM16 24kHz passthrough",
         "features": [
-            "Azure TTS voices with SSML support",
-            "Consistent prosody",
-            "Server-side VAD",
+            "Per-company Azure TTS voice selection",
+            "Semantic VAD with filler removal",
+            "Deep noise suppression",
+            "Echo cancellation",
+            "Whisper transcription",
             "Native audio streaming",
             "Natural conversation flow",
             "Call recordings & transcripts" if SAVE_RECORDINGS or SAVE_TRANSCRIPTS else None
