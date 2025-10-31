@@ -86,7 +86,7 @@ logger.info("=" * 80)
 logger.info(f"Azure Endpoint: {AZURE_AI_ENDPOINT}")
 logger.info(f"Model: {AZURE_AI_MODEL}")
 logger.info(f"Audio Format: PCM16 24kHz passthrough")
-logger.info(f"Voices: Per-company Azure TTS voices (configurable)")
+logger.info(f"Voices: 600+ Azure TTS voices (friendly names OR direct Azure voice names)")
 logger.info(f"Save Recordings: {SAVE_RECORDINGS}")
 logger.info(f"Save Transcripts: {SAVE_TRANSCRIPTS}")
 logger.info("=" * 80)
@@ -106,8 +106,11 @@ VOICE_MAP = {
     'cedar': 'cedar',
 }
 
-# Azure TTS voice mappings for Voice Live API
+# Azure TTS voice mappings for Voice Live API (600+ voices supported)
+# Companies can use friendly names (alloy, cedar, etc.) OR direct Azure voice names
+# Full list: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts
 AZURE_VOICE_MAP = {
+    # Friendly names mapped to Azure voices
     'alloy': 'en-US-AndrewNeural',           # Warm, friendly male voice
     'shimmer': 'en-US-JennyNeural',          # Friendly, warm female voice
     'echo': 'en-US-GuyNeural',               # Professional male voice
@@ -116,7 +119,12 @@ AZURE_VOICE_MAP = {
     'coral': 'en-US-AvaNeural',              # Conversational female voice
     'sage': 'en-US-BrianNeural',             # Clear, professional male voice
     'verse': 'en-US-AriaNeural',             # Friendly, expressive female voice
-    'cedar': 'en-US-FableTurboMultilingualNeural',  # Low-latency conversational male (current default)
+    'cedar': 'en-US-FableTurboMultilingualNeural',  # Low-latency conversational male
+
+    # Additional popular voices for quick access
+    'jenny-multilingual': 'en-US-JennyMultilingualNeural',
+    'ryan-multilingual': 'en-US-RyanMultilingualNeural',
+    'aria-multilingual': 'en-US-AriaMultilingualNeural',
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -321,12 +329,24 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         remove_fillers = audio_settings.get('remove-filler-words', True)
 
         # Configure Azure TTS voice based on company configuration
-        azure_voice_name = AZURE_VOICE_MAP.get(voice_name, "en-US-FableTurboMultilingualNeural")
+        # Support both friendly names (cedar, alloy) and direct Azure voice names
+        if voice_name in AZURE_VOICE_MAP:
+            # Use friendly name mapping
+            azure_voice_name = AZURE_VOICE_MAP[voice_name]
+            logger.info(f"✅ Azure TTS Voice configured: {azure_voice_name} (mapped from friendly name: {voice_name})")
+        elif voice_name and ("-" in voice_name and "Neural" in voice_name):
+            # Looks like a direct Azure voice name (e.g., "en-US-AriaNeural", "es-MX-DaliaNeural")
+            azure_voice_name = voice_name
+            logger.info(f"✅ Azure TTS Voice configured: {azure_voice_name} (direct Azure voice name)")
+        else:
+            # Fallback to default
+            azure_voice_name = "en-US-FableTurboMultilingualNeural"
+            logger.warning(f"⚠️ Voice '{voice_name}' not recognized, using default: {azure_voice_name}")
+
         voice_config = AzureStandardVoice(
             name=azure_voice_name,
             type="azure-standard"
         )
-        logger.info(f"✅ Azure TTS Voice configured: {azure_voice_name} (mapped from: {voice_name})")
 
         # Configure VAD (semantic or standard)
         if use_semantic_vad:
@@ -410,14 +430,19 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "16.0 - Per-company voices with advanced features",
+        "version": "16.1 - All 600+ Azure voices supported",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
-        "voices": "Per-company Azure TTS voices (configurable)",
-        "available_voices": list(AZURE_VOICE_MAP.keys()),
+        "voices": "Per-company Azure TTS voices (600+ voices supported)",
+        "voice_options": {
+            "friendly_names": list(AZURE_VOICE_MAP.keys()),
+            "direct_azure_voices": "Any Azure Neural voice (e.g., en-US-AriaNeural, es-MX-DaliaNeural, fr-FR-DeniseNeural)",
+            "full_list": "https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support?tabs=tts"
+        },
         "audio_format": "PCM16 24kHz passthrough",
         "features": [
-            "Per-company Azure TTS voice selection",
+            "Per-company Azure TTS voice selection (600+ voices)",
+            "Friendly names OR direct Azure voice names",
             "Semantic VAD with filler removal",
             "Deep noise suppression",
             "Echo cancellation",
