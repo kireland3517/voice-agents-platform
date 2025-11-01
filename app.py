@@ -581,7 +581,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "17.0 - Function calling with surname & ZIP lookup",
+        "version": "17.1 - FIX: Pass call context via additional_instructions",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -953,29 +953,18 @@ async def send_signalwire_audio_to_voicelive(
                             f"Caller ID: {formatted_phone}"
                         )
 
-                        context_message = {
-                            "type": "conversation.item.create",
-                            "item": {
-                                "type": "message",
-                                "role": "system",
-                                "content": [{
-                                    "type": "input_text",
-                                    "text": context_text
-                                }]
-                            }
-                        }
-
-                        # Note: Voice Live SDK handles context differently
-                        # Context is provided in the initial instructions
+                        # Voice Live SDK passes context via additional_instructions parameter
                         logger.info(f"📤 Call context:\n{context_text}")
 
                         # Wait for audio stream to fully establish before greeting
                         await asyncio.sleep(1.5)
 
-                        # Trigger response - Cedar will use his script's greeting
-                        # Voice Live SDK uses response.create() method
-                        await voicelive_connection.response.create()
-                        logger.info("✅ Triggered greeting (Cedar will use his script)")
+                        # Trigger response with context via additional_instructions
+                        # SDK supports: response.create(response, event_id, additional_instructions)
+                        await voicelive_connection.response.create(
+                            additional_instructions=context_text
+                        )
+                        logger.info("✅ Triggered greeting with call context (Cedar will use his script)")
 
                     elif event_name == "media":
                         if not call_session:
