@@ -1,0 +1,22 @@
+{"TimeStamp": "2025-10-24T12:19:33.28337", "Log": "Connecting to the container 'voice-agents-bridge'..."}
+{"TimeStamp": "2025-10-24T12:19:33.31097", "Log": "Successfully Connected to container: 'voice-agents-bridge' [Revision: 'voice-agents-bridge--0000082', Replica: 'voice-agents-bridge--0000082-6b6769bd58-gnc9m']"}
+{"TimeStamp": "2025-10-24T12:16:25.383751+00:00", "Log": "F     'Server': 'Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0'"}
+{"TimeStamp": "2025-10-24T12:16:25.3837563+00:00", "Log": "F     'x-ms-request-id': '5b593a64-801e-00bc-29e0-44c33b000000'"}
+{"TimeStamp": "2025-10-24T12:16:25.3837588+00:00", "Log": "F     'x-ms-client-request-id': '42c90f6e-b0d3-11f0-89bf-5660b66deb8c'"}
+{"TimeStamp": "2025-10-24T12:16:25.383761+00:00", "Log": "F     'x-ms-version': 'REDACTED'"}
+{"TimeStamp": "2025-10-24T12:16:25.3837628+00:00", "Log": "F     'x-ms-content-crc64': 'REDACTED'"}
+{"TimeStamp": "2025-10-24T12:16:25.3837646+00:00", "Log": "F     'x-ms-request-server-encrypted': 'REDACTED'"}
+{"TimeStamp": "2025-10-24T12:16:25.3837668+00:00", "Log": "F     'Date': 'Fri, 24 Oct 2025 12:16:25 GMT'"}
+{"TimeStamp": "2025-10-24T12:16:25.3838127+00:00", "Log": "F 2025-10-24 12:16:25,383 - config - INFO - \u2705 Saved recording: senior-life/6da94e32-fc63-4429-bf2e-4154a62bdeec-ai.wav"}
+{"TimeStamp": "2025-10-24T12:16:25.3838763+00:00", "Log": "F 2025-10-24 12:16:25,383 - voice_bridge - INFO - Successfully saved call session data for 6da94e32-fc63-4429-bf2e-4154a62bdeec"}
+{"TimeStamp": "2025-10-24T12:16:25.3839427+00:00", "Log": "F 2025-10-24 12:16:25,383 - voice_bridge - INFO - \u2705 Call session saved successfully"}
+{"TimeStamp": "2025-10-24T12:16:25.3839493+00:00", "Log": "F 2025-10-24 12:16:25,383 - voice_bridge - INFO - \ud83d\uded1 Audio forwarding stopped for Senior Life Insurance Company"}
+{"TimeStamp": "2025-10-24T12:16:25.3842711+00:00", "Log": "F INFO:     connection closed"}
+{"TimeStamp": "2025-10-24T12:16:49.1709361+00:00", "Log": "F INFO:     127.0.0.1:45190 - \"GET /healthz HTTP/1.1\" 200 OK"}
+{"TimeStamp": "2025-10-24T12:17:19.170119+00:00", "Log": "F INFO:     127.0.0.1:38658 - \"GET /healthz HTTP/1.1\" 200 OK"}
+{"TimeStamp": "2025-10-24T12:17:49.1693145+00:00", "Log": "F INFO:     127.0.0.1:35106 - \"GET /healthz HTTP/1.1\" 200 OK"}
+{"TimeStamp": "2025-10-24T12:18:01.7977365+00:00", "Log": "F INFO:     100.100.0.162:46232 - \"GET / HTTP/1.1\" 200 OK"}
+{"TimeStamp": "2025-10-24T12:18:19.1755705+00:00", "Log": "F INFO:     127.0.0.1:38970 - \"GET /healthz HTTP/1.1\" 200 OK"}
+{"TimeStamp": "2025-10-24T12:18:49.1730406+00:00", "Log": "F INFO:     127.0.0.1:35922 - \"GET /healthz HTTP/1.1\" 200 OK"}
+{"TimeStamp": "2025-10-24T12:19:19.1703238+00:00", "Log": "F INFO:     127.0.0.1:41872 - \"GET /healthz HTTP/1.1\" 200 OK"}
+{"TimeStamp": "2025-10-24T12:19:28.8433361+00:00", "Log": "F INFO:     100.100.0.104:40896 - \"GET / HTTP/1.1\" 200 OK"}

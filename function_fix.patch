@@ -1,0 +1,29 @@
+--- a/app.py
++++ b/app.py
+@@ -475,14 +475,18 @@
+             if function_name and arguments:
+                 # Track function call
+                 if monitor:
+                     monitor.add_function_call(function_name)
+                 
+                 # Execute the function
+                 result = await execute_function(function_name, arguments)
+                 logger.info(f"   Function result: {result}")
+                 
+                 # Send result back to Voice Live
+                 try:
+-                    # Try SDK method first
+-                    if hasattr(voicelive_connection, 'conversation') and hasattr(voicelive_connection.conversation, 'item'):
+-                        await voicelive_connection.conversation.item.create({
+-                            "type": "function_call_output",
+-                            "call_id": call_id,
+-                            "output": json.dumps(result)
+-                        })
++                    # Create function output item using correct SDK method
++                    await voicelive_connection.conversation.item.create(
++                        event_id=f"func_result_{call_id}",
++                        type="function_call_output",
++                        call_id=call_id,
++                        output=json.dumps(result)
++                    )
+                     logger.info("✅ Function result sent via SDK")
