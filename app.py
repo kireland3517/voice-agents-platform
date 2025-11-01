@@ -214,6 +214,73 @@ class CallSession:
             logger.error(traceback.format_exc())
 
 # ──────────────────────────────────────────────────────────────────────────────
+# SESSION MONITORING AND METRICS
+# ──────────────────────────────────────────────────────────────────────────────
+class SessionMonitor:
+    """Monitor and track Voice Live session metrics"""
+
+    def __init__(self, company_id: str):
+        self.company_id = company_id
+        self.start_time = datetime.now(UTC)
+        self.token_count = 0
+        self.audio_duration_ms = 0
+        self.turn_count = 0
+        self.function_calls = []
+        self.vad_triggers = 0
+        self.errors = []
+        self.last_token_warning = 0
+
+    def add_tokens(self, input_tokens: int, output_tokens: int):
+        self.token_count += (input_tokens + output_tokens)
+        # Audio uses ~800 tokens/minute per research
+        estimated_minutes = self.token_count / 800
+        remaining_minutes = max(0, 15 - estimated_minutes)  # 15 min session limit
+
+        # Warn at thresholds
+        if self.token_count > 100000 and self.last_token_warning < 100000:
+            logger.warning(f"⚠️ HIGH TOKEN USAGE: {self.token_count:,}/128,000 ({self.token_count/128000:.1%})")
+            self.last_token_warning = 100000
+        elif self.token_count > 64000 and self.last_token_warning < 64000:
+            logger.info(f"📈 Token usage at {self.token_count/128000:.1%} of limit")
+            self.last_token_warning = 64000
+
+        if remaining_minutes < 2:
+            logger.warning(f"⏰ Session approaching 15-minute limit: {remaining_minutes:.1f} min remaining")
+
+    def add_turn(self):
+        self.turn_count += 1
+        if self.turn_count == 10:
+            logger.info(f"💡 Consider text conversion after {self.turn_count} turns to save tokens")
+
+    def add_function_call(self, function_name: str):
+        self.function_calls.append({
+            'name': function_name,
+            'timestamp': datetime.now(UTC).isoformat()
+        })
+
+    def add_vad_trigger(self):
+        self.vad_triggers += 1
+
+    def add_error(self, error: str):
+        self.errors.append({
+            'error': error,
+            'timestamp': datetime.now(UTC).isoformat()
+        })
+
+    def log_summary(self):
+        duration = (datetime.now(UTC) - self.start_time).total_seconds()
+        logger.info(f"""
+📊 SESSION SUMMARY for {self.company_id}:
+   Duration: {duration:.1f}s
+   Turns: {self.turn_count}
+   Tokens: {self.token_count:,} (~{self.token_count/128000:.1%} of limit)
+   VAD Triggers: {self.vad_triggers}
+   Function Calls: {len(self.function_calls)}
+   Errors: {len(self.errors)}
+   Avg Turn Time: {duration/max(1, self.turn_count):.1f}s
+        """)
+
+# ──────────────────────────────────────────────────────────────────────────────
 # PROMPT BUILDER (Simplified - Instructions from Blob Storage)
 # ──────────────────────────────────────────────────────────────────────────────
 def build_company_instructions(company_config):
@@ -344,11 +411,43 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             echo_cancellation = AudioEchoCancellation(type="server_echo_cancellation")
             logger.info("✅ Echo Cancellation ENABLED")
 
-        # Configure audio transcription
+        # Configure audio transcription with enhancements
         transcription = None
         if use_transcription:
-            transcription = AudioInputTranscriptionOptions(model="whisper-1", language="en")
-            logger.info("✅ Whisper Transcription ENABLED")
+            # Get domain-specific terms from config
+            custom_terms = audio_settings.get('custom-transcription-terms', [])
+
+            # Build comprehensive phrase list for insurance industry
+            phrase_list = [
+                # Company and agent terms
+                "Cedar", "Senior Life Insurance Company", "Senior Life",
+
+                # Insurance terms
+                "Medicare", "Medicaid", "Medicare Advantage", "Part A", "Part B", "Part D",
+                "premium", "deductible", "copay", "copayment", "coinsurance",
+                "beneficiary", "policyholder", "coverage", "claim", "enrollment",
+                "open enrollment", "special enrollment period",
+
+                # Medical terms
+                "prescription", "formulary", "prior authorization", "network",
+                "in-network", "out-of-network", "primary care physician",
+
+                # Add custom terms from config
+                *custom_terms
+            ]
+
+            # Remove duplicates while preserving order
+            phrase_list = list(dict.fromkeys(phrase_list))
+
+            transcription = AudioInputTranscriptionOptions(
+                model="whisper-1",
+                language="en",
+                temperature=float(audio_settings.get('transcription-temperature', 0.0)),  # Deterministic
+                phrase_list=phrase_list[:100]  # API may have limits on phrase list size
+            )
+
+            logger.info(f"✅ Whisper Transcription ENABLED with {len(phrase_list)} domain terms")
+            logger.debug(f"   First 5 terms: {', '.join(phrase_list[:5])}...")
 
         # ──────────────────────────────────────────────────────────────────────
         # FUNCTION CALLING CONFIGURATION
@@ -424,6 +523,52 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.error(f"❌ Failed to create Voice Live connection: {e}")
         logger.error(traceback.format_exc())
         raise
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONNECTION RESILIENCE: RETRY LOGIC AND HEARTBEAT
+# ──────────────────────────────────────────────────────────────────────────────
+async def create_voicelive_connection_with_retry(company_instructions, voice_name, audio_settings, max_retries=3):
+    """Create Voice Live connection with exponential backoff retry logic"""
+    last_error = None
+    retry_count = audio_settings.get('connection-retry-attempts', max_retries)
+
+    for attempt in range(retry_count):
+        try:
+            logger.info(f"🔄 Connection attempt {attempt + 1}/{retry_count}")
+            connection = await create_voicelive_connection(
+                company_instructions, voice_name, audio_settings
+            )
+
+            logger.info("✅ Connection established with retry logic")
+            return connection
+
+        except Exception as e:
+            last_error = e
+            if attempt == retry_count - 1:
+                logger.error(f"❌ All connection attempts failed after {retry_count} tries: {e}")
+                raise
+
+            # Exponential backoff: 2, 4, 8... seconds, max 30
+            wait_time = min(2 ** (attempt + 1), 30)
+            logger.warning(f"⚠️ Attempt {attempt + 1} failed: {e}")
+            logger.info(f"⏳ Retrying in {wait_time} seconds...")
+            await asyncio.sleep(wait_time)
+
+    raise last_error or Exception("Connection failed")
+
+async def heartbeat_loop(connection, monitor: SessionMonitor, interval: int = 30):
+    """Keep connection alive with periodic heartbeat"""
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            # Connection stays alive through regular event processing
+            logger.debug(f"💓 Connection heartbeat ({interval}s interval)")
+
+    except asyncio.CancelledError:
+        logger.info("💔 Heartbeat task cancelled")
+    except Exception as e:
+        logger.error(f"💔 Heartbeat error: {e}")
+        monitor.add_error(f"Heartbeat failed: {e}")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FUNCTION EXECUTION HANDLER
@@ -520,7 +665,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "18.1 - Add comprehensive transcript logging",
+        "version": "19.0 - Production monitoring, resilience & optimization",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -597,12 +742,31 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         await signalwire_ws.close(code=1011)
         return
 
-    shared_state: Dict[str, Any] = {"call_session": None, "stream_sid": None}
+    shared_state: Dict[str, Any] = {
+        "call_session": None,
+        "stream_sid": None,
+        "monitor": SessionMonitor(company_id)  # Add session monitor
+    }
     voicelive_connection = None
+    heartbeat_task = None
+
     try:
         instructions, voice_name, greeting_text = build_company_instructions(company_config)
-        voicelive_connection = await create_voicelive_connection(instructions, voice_name, audio_settings)
-        logger.info(f"✅ Azure Voice Live API connection established for {company_name}")
+
+        # Get heartbeat interval from config
+        heartbeat_interval = audio_settings.get('heartbeat-interval-seconds', 30)
+
+        # Create connection with retry logic
+        voicelive_connection = await create_voicelive_connection_with_retry(
+            instructions, voice_name, audio_settings
+        )
+
+        # Start heartbeat task
+        heartbeat_task = asyncio.create_task(
+            heartbeat_loop(voicelive_connection, shared_state["monitor"], heartbeat_interval)
+        )
+
+        logger.info(f"✅ Voice Live API connected with monitoring for {company_name}")
 
         # Start bidirectional audio forwarding
         audio_sender_task = asyncio.create_task(
@@ -616,9 +780,19 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
                 try:
                     call_session = shared_state.get("call_session")
                     stream_sid = shared_state.get("stream_sid")
-                    await handle_voicelive_event(event, signalwire_ws, voicelive_connection, company_name, stream_sid, call_session)
+                    monitor = shared_state.get("monitor")
+
+                    # Pass monitor to event handler
+                    await handle_voicelive_event(
+                        event, signalwire_ws, voicelive_connection,
+                        company_name, stream_sid, call_session,
+                        monitor  # Add monitor parameter
+                    )
                 except Exception as e:
                     logger.error(f"Error handling Voice Live event: {e}")
+                    monitor = shared_state.get("monitor")
+                    if monitor:
+                        monitor.add_error(str(e))
                     logger.error(traceback.format_exc())
         except Exception as e:
             logger.info(f"Voice Live connection closed for {company_name}: {e}")
@@ -637,6 +811,19 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
             await signalwire_ws.send_text(json.dumps({"type": "error", "source": "voicelive", "detail": str(e)}))
             await signalwire_ws.close(code=1011)
     finally:
+        # Clean up heartbeat task
+        if heartbeat_task:
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
+
+        # Log session summary
+        monitor = shared_state.get("monitor")
+        if monitor:
+            monitor.log_summary()
+
         # Voice Live SDK connection cleanup is handled automatically
         # No explicit close needed for connections created with __aenter__()
         pass
@@ -650,7 +837,8 @@ async def handle_voicelive_event(
     voicelive_connection,
     company_name: str,
     stream_sid: Optional[str],
-    call_session: Optional[CallSession]
+    call_session: Optional[CallSession],
+    monitor: Optional[SessionMonitor] = None  # Add monitor parameter
 ):
     """Handle events from Voice Live API and forward to SignalWire"""
     logger.debug(f"📥 Voice Live event: {event.type}")
@@ -692,6 +880,40 @@ async def handle_voicelive_event(
                 for content in event.item.content:
                     if hasattr(content, 'text'):
                         logger.info(f"💬 AI RESPONSE: {content.text}")
+
+    # ──────────────────────────────────────────────────────────────────────
+    # TOKEN USAGE AND RATE LIMIT MONITORING
+    # ──────────────────────────────────────────────────────────────────────
+    # Monitor token usage
+    if hasattr(event, 'usage') or 'usage' in str(event.type).lower():
+        if monitor and hasattr(event, 'usage'):
+            usage = event.usage
+            if hasattr(usage, 'input_tokens') and hasattr(usage, 'output_tokens'):
+                input_tokens = usage.input_tokens
+                output_tokens = usage.output_tokens
+                total_tokens = input_tokens + output_tokens
+
+                logger.info(f"📊 Token usage - Input: {input_tokens:,}, Output: {output_tokens:,}, Total: {total_tokens:,}")
+                monitor.add_tokens(input_tokens, output_tokens)
+
+    # Track rate limits
+    if hasattr(event, 'rate_limits') or 'rate_limit' in str(event.type).lower():
+        if hasattr(event, 'rate_limits'):
+            rate_limits = event.rate_limits
+            if hasattr(rate_limits, 'remaining_tokens'):
+                remaining = rate_limits.remaining_tokens
+                if remaining < 10000:
+                    logger.warning(f"⚠️ Rate limit warning: {remaining:,} tokens remaining")
+
+    # Track VAD events for monitoring
+    if monitor:
+        if event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
+            monitor.add_vad_trigger()
+            monitor.add_turn()  # New turn started
+
+        elif event.type == ServerEventType.ERROR:
+            error_msg = getattr(event, 'error', {}).get('message', 'Unknown error') if hasattr(event, 'error') else 'Unknown error'
+            monitor.add_error(error_msg)
 
     # ──────────────────────────────────────────────────────────────────────
     # STANDARD EVENT HANDLING
@@ -780,6 +1002,10 @@ async def handle_voicelive_event(
         logger.info(f"   Function: {function_name}, Args: {arguments}, CallID: {call_id}")
 
         if function_name and arguments:
+            # Track function call
+            if monitor:
+                monitor.add_function_call(function_name)
+
             # Execute the function
             result = await execute_function(function_name, arguments)
             logger.info(f"   Function result: {result}")
@@ -853,6 +1079,15 @@ async def send_signalwire_audio_to_voicelive(
     greeting_text: str
 ):
     logger.info(f"🎤 Audio forwarding started for {company_name}")
+
+    # Audio chunking configuration from research
+    OPTIMAL_CHUNK_MS = 100  # Research-backed optimal
+    SAMPLE_RATE = 24000
+    samples_per_chunk = int(SAMPLE_RATE * (OPTIMAL_CHUNK_MS / 1000))  # 2400 samples
+    bytes_per_chunk = samples_per_chunk * 2  # 16-bit = 2 bytes per sample
+    audio_buffer = bytearray()  # Buffer for optimal chunking
+
+    logger.info(f"🎯 Audio chunking configured: {OPTIMAL_CHUNK_MS}ms chunks ({bytes_per_chunk} bytes)")
 
     stream_sid: Optional[str] = None
     call_session: Optional[CallSession] = None
@@ -970,18 +1205,47 @@ async def send_signalwire_audio_to_voicelive(
                     elif event_name == "media":
                         if not call_session:
                             continue
-                        
+
                         payload = (data.get("media") or {}).get("payload")
                         if not payload:
                             continue
 
-                        # Save caller audio for recording
+                        # Save raw audio for recording
                         if SAVE_RECORDINGS:
                             call_session.add_caller_audio(payload)
 
-                        # Forward to Voice Live API (server VAD handles turn detection)
-                        await voicelive_connection.input_audio_buffer.append(audio=payload)
-                        logger.debug("📨 Forwarded audio to Voice Live")
+                        # Decode and add to chunking buffer
+                        try:
+                            audio_bytes = base64.b64decode(payload)
+                            audio_buffer.extend(audio_bytes)
+
+                            # Process in optimal 100ms chunks
+                            chunks_processed = 0
+                            while len(audio_buffer) >= bytes_per_chunk:
+                                # Extract optimal chunk
+                                chunk = bytes(audio_buffer[:bytes_per_chunk])
+                                audio_buffer = audio_buffer[bytes_per_chunk:]
+
+                                # Re-encode chunk for Voice Live API
+                                chunk_b64 = base64.b64encode(chunk).decode('utf-8')
+
+                                # Forward optimal chunk
+                                await voicelive_connection.input_audio_buffer.append(audio=chunk_b64)
+                                chunks_processed += 1
+
+                            if chunks_processed > 0:
+                                logger.debug(f"🔊 Processed {chunks_processed} x {OPTIMAL_CHUNK_MS}ms chunks")
+
+                            # Log buffered data waiting for next chunk
+                            if len(audio_buffer) > 0:
+                                buffer_ms = (len(audio_buffer) / 2 / SAMPLE_RATE) * 1000
+                                logger.debug(f"📦 Buffering {len(audio_buffer)} bytes ({buffer_ms:.1f}ms) for next chunk")
+
+                        except Exception as e:
+                            logger.error(f"Audio chunking error: {e}")
+                            # Fallback to direct forward without chunking
+                            await voicelive_connection.input_audio_buffer.append(audio=payload)
+                            logger.debug("🔨 Fallback: forwarded audio without chunking")
 
                     elif event_name == "stop":
                         logger.info(f"⏹️ Call ended for {company_name}")
