@@ -49,20 +49,25 @@ class ConfigManager:
         if not self.blob_service_client:
             logger.warning("Blob Storage not configured - skipping detailed instructions")
             return None
-        
+
         try:
-            blob_name = f"{company_id}-instructions.txt"
+            # Use specific filename for senior-life, pattern for others
+            if company_id == "senior-life":
+                blob_name = "cedar_instructions.md"
+            else:
+                blob_name = f"{company_id}-instructions.txt"
+
             blob_client = self.blob_service_client.get_blob_client(
                 container=self.instructions_container,
                 blob=blob_name
             )
-            
+
             blob_data = blob_client.download_blob()
             instructions_text = blob_data.readall().decode('utf-8')
-            
-            logger.info(f"Successfully loaded detailed instructions for {company_id} from Blob Storage")
+
+            logger.info(f"Successfully loaded detailed instructions for {company_id} from Blob Storage (blob: {blob_name})")
             return instructions_text
-            
+
         except Exception as e:
             logger.warning(f"Could not load detailed instructions for {company_id}: {e}")
             return None
