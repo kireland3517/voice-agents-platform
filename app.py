@@ -639,7 +639,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "19.8 - FIX: Use call_id parameter (not function_call_id) in both methods",
+        "version": "20.0 - FIX: Bypass SDK - send function outputs via raw WebSocket",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -986,17 +986,28 @@ async def handle_voicelive_event(
 
             # Send result back to Voice Live
             try:
-                # Use conversation.item.create() for function call outputs
-                await voicelive_connection.conversation.item.create(
-                    item={
+                # Build the raw message format (bypassing SDK)
+                raw_message = {
+                    "type": "conversation.item.create",
+                    "item": {
                         "type": "function_call_output",
                         "call_id": call_id,
                         "output": json.dumps(result)
                     }
-                )
-                logger.info("✅ Function result sent via conversation.item.create()")
+                }
+
+                # Send directly via the WebSocket connection
+                if hasattr(voicelive_connection, '_ws') or hasattr(voicelive_connection, 'ws'):
+                    ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
+                    if ws:
+                        await ws.send(json.dumps(raw_message))
+                        logger.info("✅ Function result sent via raw WebSocket")
+                    else:
+                        logger.error("❌ Cannot access WebSocket connection")
+                else:
+                    logger.error("❌ No WebSocket attribute found")
             except Exception as e:
-                logger.error(f"❌ Failed to send function result: {e}")
+                logger.error(f"❌ Failed to send raw message: {e}")
                 logger.error(traceback.format_exc())
 
     # Method 2: Check raw event data for function calls
@@ -1019,18 +1030,30 @@ async def handle_voicelive_event(
                         result = await execute_function(function_name, arguments)
                         logger.info(f"   Function result: {result}")
 
-                        # Send result back via conversation.item.create
+                        # Send result back via raw WebSocket (Method 2)
                         try:
-                            await voicelive_connection.conversation.item.create(
-                                item={
+                            # Build the raw message format (bypassing SDK)
+                            raw_message = {
+                                "type": "conversation.item.create",
+                                "item": {
                                     "type": "function_call_output",
                                     "call_id": call_id,
                                     "output": json.dumps(result)
                                 }
-                            )
-                            logger.info("✅ Function result sent (Method 2)")
+                            }
+
+                            # Send directly via the WebSocket connection
+                            if hasattr(voicelive_connection, '_ws') or hasattr(voicelive_connection, 'ws'):
+                                ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
+                                if ws:
+                                    await ws.send(json.dumps(raw_message))
+                                    logger.info("✅ Function result sent via raw WebSocket (Method 2)")
+                                else:
+                                    logger.error("❌ Cannot access WebSocket connection")
+                            else:
+                                logger.error("❌ No WebSocket attribute found")
                         except Exception as e:
-                            logger.error(f"❌ Failed to send function result: {e}")
+                            logger.error(f"❌ Failed to send raw message (Method 2): {e}")
             except:
                 pass  # Not a function call event
 
