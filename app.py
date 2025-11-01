@@ -639,7 +639,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "19.4 - FIX: Use response.create() for function call outputs",
+        "version": "19.5 - FIX: Use conversation.item.create() for function outputs",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -986,14 +986,19 @@ async def handle_voicelive_event(
 
             # Send result back to Voice Live
             try:
-                # Use response.create() for function call outputs
-                await voicelive_connection.response.create(
-                    response={
-                        "function_call_id": call_id,
+                # Step 1: Add function output to conversation
+                await voicelive_connection.conversation.item.create(
+                    item={
+                        "type": "function_call_output",
+                        "call_id": call_id,
                         "output": json.dumps(result)
                     }
                 )
-                logger.info("✅ Function result sent via response.create()")
+                logger.info("✅ Function output added to conversation")
+
+                # Step 2: Trigger response to process the function output
+                await voicelive_connection.response.create()
+                logger.info("✅ Response triggered for function output")
             except Exception as e:
                 logger.error(f"❌ Failed to send function result: {e}")
                 logger.error(traceback.format_exc())
