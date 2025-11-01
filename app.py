@@ -439,11 +439,11 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             # Remove duplicates while preserving order
             phrase_list = list(dict.fromkeys(phrase_list))
 
+            # Create transcription options WITHOUT temperature (not supported by Voice Live SDK)
             transcription = AudioInputTranscriptionOptions(
                 model="whisper-1",
                 language="en",
-                temperature=float(audio_settings.get('transcription-temperature', 0.0)),  # Deterministic
-                phrase_list=phrase_list[:100]  # API may have limits on phrase list size
+                phrase_list=phrase_list[:100]  # Limit phrase list size
             )
 
             logger.info(f"✅ Whisper Transcription ENABLED with {len(phrase_list)} domain terms")
@@ -665,7 +665,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "19.0 - Production monitoring, resilience & optimization",
+        "version": "19.1 - FIX: Remove unsupported temperature parameter from transcription",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
