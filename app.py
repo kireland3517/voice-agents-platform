@@ -411,43 +411,17 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             echo_cancellation = AudioEchoCancellation(type="server_echo_cancellation")
             logger.info("✅ Echo Cancellation ENABLED")
 
-        # Configure audio transcription with enhancements
+        # Configure audio transcription
         transcription = None
         if use_transcription:
-            # Get domain-specific terms from config
-            custom_terms = audio_settings.get('custom-transcription-terms', [])
-
-            # Build comprehensive phrase list for insurance industry
-            phrase_list = [
-                # Company and agent terms
-                "Cedar", "Senior Life Insurance Company", "Senior Life",
-
-                # Insurance terms
-                "Medicare", "Medicaid", "Medicare Advantage", "Part A", "Part B", "Part D",
-                "premium", "deductible", "copay", "copayment", "coinsurance",
-                "beneficiary", "policyholder", "coverage", "claim", "enrollment",
-                "open enrollment", "special enrollment period",
-
-                # Medical terms
-                "prescription", "formulary", "prior authorization", "network",
-                "in-network", "out-of-network", "primary care physician",
-
-                # Add custom terms from config
-                *custom_terms
-            ]
-
-            # Remove duplicates while preserving order
-            phrase_list = list(dict.fromkeys(phrase_list))
-
-            # Create transcription options WITHOUT temperature (not supported by Voice Live SDK)
+            # Create transcription options with only supported parameters
+            # Note: temperature and phrase_list are NOT supported by Voice Live SDK
             transcription = AudioInputTranscriptionOptions(
                 model="whisper-1",
-                language="en",
-                phrase_list=phrase_list[:100]  # Limit phrase list size
+                language="en"
             )
 
-            logger.info(f"✅ Whisper Transcription ENABLED with {len(phrase_list)} domain terms")
-            logger.debug(f"   First 5 terms: {', '.join(phrase_list[:5])}...")
+            logger.info("✅ Whisper Transcription ENABLED")
 
         # ──────────────────────────────────────────────────────────────────────
         # FUNCTION CALLING CONFIGURATION
@@ -665,7 +639,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "19.1 - FIX: Remove unsupported temperature parameter from transcription",
+        "version": "19.2 - FIX: Remove unsupported phrase_list parameter from transcription",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
