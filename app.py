@@ -36,7 +36,8 @@ from azure.ai.voicelive.models import (
     Modality,
     InputAudioFormat,
     OutputAudioFormat,
-    ServerEventType
+    ServerEventType,
+    FunctionTool
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -349,6 +350,44 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             transcription = AudioInputTranscriptionOptions(model="whisper-1", language="en")
             logger.info("✅ Whisper Transcription ENABLED")
 
+        # ──────────────────────────────────────────────────────────────────────
+        # FUNCTION CALLING CONFIGURATION
+        # ──────────────────────────────────────────────────────────────────────
+        logger.info("🔧 Configuring function calling tools...")
+
+        # Define tools using FunctionTool SDK class
+        tools = [
+            FunctionTool(
+                name="verify_surname",
+                description="Verify the spelling of a customer's surname using phonetic matching database. Use this when the customer provides their last name.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "surname": {
+                            "type": "string",
+                            "description": "The surname to verify (as heard from customer speech)"
+                        }
+                    },
+                    "required": ["surname"]
+                }
+            ),
+            FunctionTool(
+                name="lookup_zipcode",
+                description="Get the city and state for a given ZIP code. Use this when the customer provides their ZIP code.",
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "zipcode": {
+                            "type": "string",
+                            "description": "5-digit US ZIP code"
+                        }
+                    },
+                    "required": ["zipcode"]
+                }
+            )
+        ]
+        logger.info(f"✅ Configured {len(tools)} function calling tools: {[t.name for t in tools]}")
+
         # Create session configuration using SDK typed models
         session_config = RequestSession(
             modalities=[Modality.TEXT, Modality.AUDIO],
@@ -361,114 +400,14 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             input_audio_echo_cancellation=echo_cancellation,
             input_audio_transcription=transcription,
             temperature=float(audio_settings.get("temperature", 0.8)),
-            max_response_output_tokens=int(audio_settings.get("max-response-tokens", 1500))
+            max_response_output_tokens=int(audio_settings.get("max-response-tokens", 1500)),
+            tools=tools,
+            tool_choice="auto"
         )
 
         # Update session using proper SDK method
         await connection.session.update(session=session_config)
-        logger.info("✅ Voice Live session configured successfully")
-
-        # ──────────────────────────────────────────────────────────────────────
-        # FUNCTION CALLING CONFIGURATION
-        # ──────────────────────────────────────────────────────────────────────
-        logger.info("🔍 Inspecting SDK capabilities for function calling...")
-
-        # Inspect what the SDK actually supports
-        logger.info(f"   Connection type: {type(connection).__name__}")
-        logger.info(f"   Has 'response' attr: {hasattr(connection, 'response')}")
-        logger.info(f"   Has 'conversation' attr: {hasattr(connection, 'conversation')}")
-
-        if hasattr(connection, 'response'):
-            logger.info(f"   Response type: {type(connection.response).__name__}")
-            if hasattr(connection.response, 'create'):
-                import inspect
-                sig = inspect.signature(connection.response.create)
-                params = list(sig.parameters.keys())
-                logger.info(f"   response.create() parameters: {params}")
-
-        # Define function/tool definitions
-        function_definitions = [
-            {
-                "type": "function",
-                "name": "verify_surname",
-                "description": "Verify the spelling of a customer's surname using phonetic matching database. Use this when the customer provides their last name.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "surname": {
-                            "type": "string",
-                            "description": "The surname to verify (as heard from customer speech)"
-                        }
-                    },
-                    "required": ["surname"]
-                }
-            },
-            {
-                "type": "function",
-                "name": "lookup_zipcode",
-                "description": "Get the city and state for a given ZIP code. Use this when the customer provides their ZIP code.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "zipcode": {
-                            "type": "string",
-                            "description": "5-digit US ZIP code"
-                        }
-                    },
-                    "required": ["zipcode"]
-                }
-            }
-        ]
-
-        # Try to configure functions via SDK
-        function_calling_configured = False
-
-        # Method 1: Try SDK's response.create with tools parameter
-        if hasattr(connection, 'response') and hasattr(connection.response, 'create'):
-            try:
-                logger.info("   Attempting to configure functions via SDK response.create()...")
-                # Note: This may not work if SDK doesn't support tools parameter yet
-                await connection.response.create(
-                    tools=function_definitions,
-                    tool_choice="auto"
-                )
-                logger.info("✅ Function calling configured via SDK")
-                function_calling_configured = True
-            except (TypeError, AttributeError) as e:
-                logger.warning(f"   SDK method doesn't support tools parameter: {e}")
-
-        # Method 2: Try accessing underlying WebSocket
-        if not function_calling_configured:
-            logger.info("   Attempting WebSocket fallback for function configuration...")
-            ws = None
-
-            # Try different attribute names for WebSocket
-            for attr_name in ['_ws', 'ws', '_websocket', 'websocket', '_connection']:
-                if hasattr(connection, attr_name):
-                    ws = getattr(connection, attr_name)
-                    if ws is not None:
-                        logger.info(f"   Found WebSocket at connection.{attr_name}")
-                        break
-
-            if ws and hasattr(ws, 'send'):
-                try:
-                    await ws.send(json.dumps({
-                        "type": "response.create",
-                        "response": {
-                            "tools": function_definitions,
-                            "tool_choice": "auto"
-                        }
-                    }))
-                    logger.info("✅ Function calling configured via WebSocket")
-                    function_calling_configured = True
-                except Exception as e:
-                    logger.warning(f"   WebSocket function configuration failed: {e}")
-
-        if not function_calling_configured:
-            logger.warning("⚠️ Function calling could not be configured (SDK and WebSocket methods failed)")
-            logger.warning("   Voice agent will work but without surname verification and ZIP lookup tools")
-        else:
-            logger.info(f"✅ Functions available: verify_surname, lookup_zipcode")
+        logger.info("✅ Voice Live session configured successfully with function calling")
 
         # Log final configuration
         logger.info("=" * 80)
@@ -581,7 +520,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "17.1 - FIX: Pass call context via additional_instructions",
+        "version": "18.0 - Function calling with FunctionTool SDK class + context fix",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
