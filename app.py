@@ -639,7 +639,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "19.3 - FIX: Function call syntax + remove DEMO MODE message",
+        "version": "19.4 - FIX: Use response.create() for function call outputs",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -986,20 +986,17 @@ async def handle_voicelive_event(
 
             # Send result back to Voice Live
             try:
-                # Try SDK method first
-                if hasattr(voicelive_connection, 'conversation') and hasattr(voicelive_connection.conversation, 'item'):
-                    await voicelive_connection.conversation.item.create(
-                        type="function_call_output",
-                        call_id=call_id,
-                        output=json.dumps(result)
-                    )
-                    logger.info("✅ Function result sent via SDK")
-                else:
-                    # Fallback: send via WebSocket
-                    logger.info("   Trying WebSocket fallback for function result...")
-                    # Implementation would go here if needed
+                # Use response.create() for function call outputs
+                await voicelive_connection.response.create(
+                    response={
+                        "function_call_id": call_id,
+                        "output": json.dumps(result)
+                    }
+                )
+                logger.info("✅ Function result sent via response.create()")
             except Exception as e:
                 logger.error(f"❌ Failed to send function result: {e}")
+                logger.error(traceback.format_exc())
 
     # Method 2: Check raw event data for function calls
     elif hasattr(event, '_raw') or hasattr(event, 'data'):
