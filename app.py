@@ -213,85 +213,41 @@ class CallSession:
             logger.error(traceback.format_exc())
 
 # ──────────────────────────────────────────────────────────────────────────────
-# PROMPT BUILDER
+# PROMPT BUILDER (Simplified - Instructions from Blob Storage)
 # ──────────────────────────────────────────────────────────────────────────────
 def build_company_instructions(company_config):
+    """
+    Load company instructions from Blob Storage.
+    All instruction logic (greeting, tools, business rules, etc.) should be in Blob Storage.
+    This function only extracts voice configuration and provides minimal fallback.
+    """
     company_name = company_config.get('company-name', 'Unknown Company')
     greeting = company_config.get('greeting', f'Thank you for calling {company_name}')
-    industry = company_config.get('industry', 'general')
 
     voice_config = company_config.get('voice-config', {})
     voice_style = voice_config.get('voice-style', 'alloy')
     openai_voice = VOICE_MAP.get(voice_style.lower(), 'alloy')
 
-    contact_info = company_config.get('contact-info', {})
-    customer_service_phone = contact_info.get('customer-service-phone')
-    customer_service_email = contact_info.get('customer-service-email')
-
-    business_rules = company_config.get('business-rules', {})
-    callback_timeframe = business_rules.get('callback-timeframe')
-    transfer_hours = business_rules.get('transfer-hours')
-
     detailed_instructions = company_config.get('detailed-instructions')
 
-    # Voice consistency guidance (applies to all instructions)
-    voice_consistency_prefix = """VOICE DELIVERY GUIDELINES:
-- Maintain consistent tone, pitch, and pacing throughout the entire conversation
-- Use the same professional, warm voice quality for every response
-- Avoid sudden changes in speaking style or vocal characteristics
-- Speak naturally and conversationally with stable prosody
-
-"""
-
     if detailed_instructions:
-        instructions = voice_consistency_prefix + detailed_instructions
+        # Use instructions from Blob Storage (recommended)
+        instructions = detailed_instructions
+        logger.info(f"✅ Loaded instructions from Blob Storage ({len(detailed_instructions)} characters)")
     else:
-        contact_section = ""
-        if customer_service_phone or customer_service_email:
-            contact_section = "\n\nCONTACT INFORMATION:"
-            if customer_service_phone:
-                contact_section += f"\n- Customer Service Phone: {customer_service_phone}"
-            if customer_service_email:
-                contact_section += f"\n- Customer Service Email: {customer_service_email}"
+        # Minimal fallback if Blob Storage file missing
+        logger.warning(f"⚠️ No Blob Storage instructions found for {company_name}, using minimal fallback")
+        instructions = f"""You are a professional phone agent for {company_name}.
 
-        business_section = ""
-        if callback_timeframe or transfer_hours:
-            business_section = "\n\nBUSINESS GUIDELINES:"
-            if callback_timeframe:
-                business_section += f"\n- Callback timeframe: {callback_timeframe}"
-            if transfer_hours:
-                business_section += f"\n- Transfer/live agent hours: {transfer_hours}"
+Start every call with: {greeting}
 
-        instructions = voice_consistency_prefix + f"""You are a professional phone agent for {company_name}.
+AVAILABLE TOOLS:
+- verify_surname: Verify customer surname spelling
+- lookup_zipcode: Get city/state from ZIP code
 
-GREETING: {greeting}
-
-INDUSTRY: {industry}
-
-VOICE PERSONALITY:
-- Professional and friendly
-- Natural phone cadence
-- Helpful and knowledgeable about {company_name}
-- Appropriate pacing
-
-CONVERSATION APPROACH:
-1) Start with the greeting exactly as provided
-2) Listen to the caller's need
-3) Provide relevant information
-4) Guide the conversation professionally
-5) Stay within scope; escalate or schedule when needed
-
-AVAILABLE TOOLS (use automatically when needed):
-- verify_surname: When a customer provides their last name, this tool automatically verifies the correct spelling from a database of common surnames. Use the spelling provided in the result to confirm with the customer.
-- lookup_zipcode: When a customer provides a ZIP code, this tool automatically looks up the city and state. Use this information naturally in your response.
-
-IMPORTANT: These tools work automatically. When you receive function results, incorporate them naturally into your conversation. For example:
-- Surname result: "Thank you, Mr. [surname]. Just to confirm, that's spelled [spelling], correct?"
-- ZIP result: "Perfect, so you're in [city], [state]."
-{contact_section}
-{business_section}
+Answer questions professionally and be helpful. Keep responses concise.
 """
-    
+
     return instructions, openai_voice, greeting
 
 # ──────────────────────────────────────────────────────────────────────────────
