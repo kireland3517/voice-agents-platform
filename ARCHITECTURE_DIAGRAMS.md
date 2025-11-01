@@ -1,15 +1,17 @@
-# ACS + Voice Live API - Architecture Diagrams
+# Azure Voice Live API - Architecture Diagrams
 
-This document contains visual Mermaid diagrams illustrating the system architecture and data flows for the ACS + Voice Live API migration.
+This document contains visual Mermaid diagrams illustrating the system architecture and data flows for the Azure Voice Live API integration.
 
-**Last Updated:** October 26, 2025
+**Last Updated:** November 1, 2025
+**Version:** 20.0 - Production with Function Calling
 
 **Recent Updates:**
-- ✅ Added Caller ID flow (ACS → WebSocket → Instructions)
-- ✅ Updated configuration loading with temperature validation (>= 0.6)
-- ✅ Updated VAD settings (0.5 threshold, 500ms silence, 300ms padding)
-- ✅ Clarified 24kHz audio format throughout pipeline
-- ✅ Noted blob storage as single source for instructions
+- ✅ Added Function Calling architecture (v20.0)
+- ✅ Added Raw WebSocket bypass for function outputs
+- ✅ Added SessionMonitor and production optimizations
+- ✅ Updated audio chunking to 100ms optimal chunks
+- ✅ Removed unsupported transcription parameters (temperature, phrase_list)
+- ✅ Added connection retry and heartbeat logic
 
 ---
 
@@ -522,6 +524,163 @@ graph TB
 
 ---
 
+## 10. Function Calling Architecture (v20.0)
+
+```mermaid
+sequenceDiagram
+    participant Customer
+    participant VoiceLive as Voice Live API
+    participant Handler as Media Handler
+    participant Function as Function Service<br/>(Surname/ZIP)
+    participant WS as Raw WebSocket<br/>(SDK Bypass)
+
+    rect rgb(230, 240, 255)
+        Note over Customer,VoiceLive: Customer provides information
+        Customer->>VoiceLive: "My last name is Smith"
+        VoiceLive->>Handler: input_audio_transcription.completed<br/>transcript: "Smith"
+    end
+
+    rect rgb(255, 240, 230)
+        Note over VoiceLive,Handler: Voice Live decides to call function
+        VoiceLive->>Handler: response.function_call_arguments.done<br/>function: verify_surname<br/>args: {surname: "Smith"}<br/>call_id: call_ABC123
+        Note right of Handler: SDK Event Detection<br/>(Primary Method)
+    end
+
+    rect rgb(240, 255, 240)
+        Note over Handler,Function: Execute function locally
+        Handler->>Function: verify_surname("Smith")
+        Function->>Function: Query 162K surnames.db<br/>Phonetic matching
+        Function-->>Handler: {status: "multiple",<br/>options: ["SMITH", "SMYTH"]}
+        Note right of Handler: Function executed<br/>successfully
+    end
+
+    rect rgb(255, 230, 230)
+        Note over Handler,WS: SDK Bypass - Send result via raw WebSocket
+        Handler->>Handler: Build raw message:<br/>{type: "conversation.item.create",<br/>item: {type: "function_call_output",<br/>call_id: "call_ABC123",<br/>output: json.dumps(result)}}
+        Note right of Handler: ⚠️ SDK method broken,<br/>use raw WebSocket
+        Handler->>WS: Access connection._ws or .ws
+        WS->>VoiceLive: ws.send(json.dumps(raw_message))
+        Note right of WS: Bypasses SDK validation,<br/>sends directly to API
+    end
+
+    rect rgb(240, 230, 255)
+        Note over VoiceLive,Customer: AI uses function result in response
+        VoiceLive->>VoiceLive: Process function output<br/>Generate contextual response
+        VoiceLive->>Handler: response.audio.delta<br/>(AI speech audio)
+        Handler->>Customer: "Is that spelled<br/>S-M-I-T-H or S-M-Y-T-H?"
+    end
+
+    Note over Customer,VoiceLive: Function calling complete - conversation continues
+
+    style Handler fill:#52b788
+    style Function fill:#ffd93d
+    style WS fill:#ff6b6b,color:#fff
+    style VoiceLive fill:#0078d4,color:#fff
+```
+
+---
+
+## 11. SDK Bypass Implementation Detail
+
+```mermaid
+flowchart TD
+    Start([Function executed<br/>with result]) --> BuildMsg[Build raw JSON message]
+
+    BuildMsg --> RawMsg["raw_message = {<br/>  'type': 'conversation.item.create',<br/>  'item': {<br/>    'type': 'function_call_output',<br/>    'call_id': call_id,<br/>    'output': json.dumps(result)<br/>  }<br/>}"]
+
+    RawMsg --> CheckWS{WebSocket<br/>accessible?}
+
+    CheckWS -->|Yes: _ws exists| GetWS1["ws = connection._ws"]
+    CheckWS -->|Yes: ws exists| GetWS2["ws = connection.ws"]
+    CheckWS -->|No| Error1[❌ No WebSocket found]
+
+    GetWS1 --> Send
+    GetWS2 --> Send[Send raw message:<br/>await ws.send(json.dumps(raw_message))]
+
+    Send --> Success[✅ Function result sent<br/>via raw WebSocket]
+
+    Success --> API[Voice Live API<br/>receives function output]
+    API --> Continue[AI continues<br/>conversation with result]
+
+    Error1 --> Log[Log error and continue<br/>without function result]
+
+    style Start fill:#e1f5ff
+    style RawMsg fill:#fff3cd
+    style Send fill:#ff6b6b,color:#fff
+    style Success fill:#52b788,color:#fff
+    style Error1 fill:#ff6b6b,color:#fff
+    style API fill:#0078d4,color:#fff
+
+    Note1["⚠️ SDK Limitation:<br/>ConversationRequestItem<br/>doesn't accept call_id<br/>or function_call_id"]
+    Note1 -.->|Explains why| RawMsg
+
+    Note2["🔧 Workaround:<br/>Access underlying<br/>WebSocket directly"]
+    Note2 -.->|Solution| GetWS1
+
+    style Note1 fill:#ffe6e6
+    style Note2 fill:#e6ffe6
+```
+
+---
+
+## 12. Production Monitoring & Resilience
+
+```mermaid
+flowchart TB
+    subgraph "Session Lifecycle"
+        Start([Call Initiated]) --> CreateMonitor[Create SessionMonitor<br/>track: tokens, turns, calls]
+        CreateMonitor --> RetryLoop[Connection with<br/>Exponential Backoff]
+    end
+
+    subgraph "Connection Resilience"
+        RetryLoop --> Attempt1{Attempt 1}
+        Attempt1 -->|Success| Connected[✅ Connected]
+        Attempt1 -->|Fail| Wait2[Wait 2s]
+        Wait2 --> Attempt2{Attempt 2}
+        Attempt2 -->|Success| Connected
+        Attempt2 -->|Fail| Wait4[Wait 4s]
+        Wait4 --> Attempt3{Attempt 3}
+        Attempt3 -->|Success| Connected
+        Attempt3 -->|Fail| Failed[❌ All attempts failed]
+    end
+
+    subgraph "Active Session Monitoring"
+        Connected --> Heartbeat[Start Heartbeat Loop<br/>30s intervals]
+        Heartbeat --> Monitor[Track Metrics:<br/>• Token usage<br/>• Turn count<br/>• Function calls<br/>• VAD triggers<br/>• Errors]
+    end
+
+    subgraph "Audio Processing"
+        Monitor --> Chunking[100ms Audio Chunks<br/>2400 samples @ 24kHz]
+        Chunking --> Buffer[Buffer for optimal<br/>chunk alignment]
+        Buffer --> Forward[Forward to<br/>Voice Live API]
+    end
+
+    subgraph "Token Management"
+        Monitor --> CheckTokens{Tokens > 64k?}
+        CheckTokens -->|No| Continue[Continue call]
+        CheckTokens -->|Yes| Warn[⚠️ Warning:<br/>Approaching limit]
+        Warn --> CheckLimit{Tokens > 100k?}
+        CheckLimit -->|No| Continue
+        CheckLimit -->|Yes| Alert[🚨 HIGH USAGE:<br/>Near 128k limit]
+    end
+
+    subgraph "Cleanup & Reporting"
+        Continue --> CallEnd[Call Ends]
+        CallEnd --> StopHeart[Stop Heartbeat]
+        StopHeart --> Summary[Log Session Summary:<br/>• Duration<br/>• Turn count<br/>• Token usage<br/>• Function calls<br/>• Errors]
+        Summary --> Save[Save Recordings<br/>& Transcripts]
+    end
+
+    style CreateMonitor fill:#52b788,color:#fff
+    style Connected fill:#52b788,color:#fff
+    style Failed fill:#ff6b6b,color:#fff
+    style Warn fill:#ffa94d
+    style Alert fill:#ff6b6b,color:#fff
+    style Summary fill:#b197fc,color:#fff
+```
+
+---
+
 ## Diagram Rendering
 
 These diagrams use **Mermaid** syntax and will render automatically in:
@@ -563,6 +722,9 @@ If your markdown viewer doesn't support Mermaid:
 | 7 | Call Termination | Cleanup and data saving |
 | 8 | Component Interaction | Service dependencies |
 | 9 | Deployment Architecture | Azure resources layout |
+| **10** | **Function Calling Architecture** | **Complete function call flow with SDK bypass** |
+| **11** | **SDK Bypass Implementation** | **Raw WebSocket workaround details** |
+| **12** | **Production Monitoring** | **SessionMonitor, retry logic, token tracking** |
 
 ---
 
