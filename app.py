@@ -520,7 +520,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "18.0 - Function calling with FunctionTool SDK class + context fix",
+        "version": "18.1 - Add comprehensive transcript logging",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -655,6 +655,47 @@ async def handle_voicelive_event(
     """Handle events from Voice Live API and forward to SignalWire"""
     logger.debug(f"📥 Voice Live event: {event.type}")
 
+    # ──────────────────────────────────────────────────────────────────────
+    # TRANSCRIPT LOGGING
+    # ──────────────────────────────────────────────────────────────────────
+    # Log user speech transcripts
+    event_type_str = str(event.type)
+    if 'transcription' in event_type_str.lower() or 'transcript' in event_type_str.lower():
+        transcript_text = None
+        if hasattr(event, 'transcript'):
+            transcript_text = event.transcript
+        elif hasattr(event, 'text'):
+            transcript_text = event.text
+        elif hasattr(event, 'content'):
+            transcript_text = event.content
+
+        if transcript_text:
+            logger.info(f"📝 USER TRANSCRIPT: {transcript_text}")
+
+    # Log AI response text
+    if 'text' in event_type_str.lower() and 'delta' in event_type_str.lower():
+        response_text = None
+        if hasattr(event, 'delta'):
+            response_text = event.delta
+        elif hasattr(event, 'text'):
+            response_text = event.text
+
+        if response_text and isinstance(response_text, str):
+            logger.info(f"💬 AI RESPONSE TEXT: {response_text}")
+
+    # Log content parts (might contain text)
+    if 'content_part' in event_type_str.lower() or 'output_item' in event_type_str.lower():
+        if hasattr(event, 'part') and hasattr(event.part, 'text'):
+            logger.info(f"💬 AI RESPONSE: {event.part.text}")
+        elif hasattr(event, 'item'):
+            if hasattr(event.item, 'content') and isinstance(event.item.content, list):
+                for content in event.item.content:
+                    if hasattr(content, 'text'):
+                        logger.info(f"💬 AI RESPONSE: {content.text}")
+
+    # ──────────────────────────────────────────────────────────────────────
+    # STANDARD EVENT HANDLING
+    # ──────────────────────────────────────────────────────────────────────
     if event.type == ServerEventType.SESSION_UPDATED:
         logger.info(f"✅ {company_name} Voice Live session ready")
 
@@ -778,6 +819,27 @@ async def handle_voicelive_event(
                         logger.info(f"   Function result: {result}")
             except:
                 pass  # Not a function call event
+
+    # ──────────────────────────────────────────────────────────────────────
+    # DEBUG: Log all event types to discover what we're missing
+    # ──────────────────────────────────────────────────────────────────────
+    # Log event details for debugging (helps find transcript events)
+    event_type_str = str(event.type)
+    if event_type_str not in [
+        str(ServerEventType.RESPONSE_AUDIO_DELTA),  # Too verbose
+        str(ServerEventType.SESSION_UPDATED),
+        str(ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED),
+        str(ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED),
+        str(ServerEventType.RESPONSE_CREATED),
+        str(ServerEventType.RESPONSE_AUDIO_DONE),
+        str(ServerEventType.RESPONSE_DONE),
+        str(ServerEventType.ERROR)
+    ]:
+        # Log unhandled events to discover new event types
+        event_attrs = {k: v for k, v in event.__dict__.items() if not k.startswith('_')}
+        logger.info(f"🔍 Event type: {event_type_str}")
+        if event_attrs:
+            logger.info(f"   Attributes: {event_attrs}")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # SIGNALWIRE → VOICE LIVE AUDIO FORWARDER
