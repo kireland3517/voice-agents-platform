@@ -639,7 +639,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "19.7 - FIX: Both function result methods now use conversation.item.create()",
+        "version": "19.8 - FIX: Use call_id parameter (not function_call_id) in both methods",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -990,7 +990,7 @@ async def handle_voicelive_event(
                 await voicelive_connection.conversation.item.create(
                     item={
                         "type": "function_call_output",
-                        "function_call_id": call_id,
+                        "call_id": call_id,
                         "output": json.dumps(result)
                     }
                 )
@@ -1024,7 +1024,7 @@ async def handle_voicelive_event(
                             await voicelive_connection.conversation.item.create(
                                 item={
                                     "type": "function_call_output",
-                                    "function_call_id": call_id,
+                                    "call_id": call_id,
                                     "output": json.dumps(result)
                                 }
                             )
