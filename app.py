@@ -334,7 +334,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
     - Filler word removal: Auto-remove "uh", "um"
     """
     logger.info("=" * 80)
-    logger.info("🚀 Connecting to Azure Voice Live API with ALL optimizations enabled")
+    logger.info("🚀 Connecting to Azure Voice Live API with production optimizations")
     logger.info(f"Endpoint: {AZURE_AI_ENDPOINT}")
     logger.info(f"Model: {AZURE_AI_MODEL}")
 
@@ -639,7 +639,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "19.2 - FIX: Remove unsupported phrase_list parameter from transcription",
+        "version": "19.3 - FIX: Function call syntax + remove DEMO MODE message",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -988,11 +988,11 @@ async def handle_voicelive_event(
             try:
                 # Try SDK method first
                 if hasattr(voicelive_connection, 'conversation') and hasattr(voicelive_connection.conversation, 'item'):
-                    await voicelive_connection.conversation.item.create({
-                        "type": "function_call_output",
-                        "call_id": call_id,
-                        "output": json.dumps(result)
-                    })
+                    await voicelive_connection.conversation.item.create(
+                        type="function_call_output",
+                        call_id=call_id,
+                        output=json.dumps(result)
+                    )
                     logger.info("✅ Function result sent via SDK")
                 else:
                     # Fallback: send via WebSocket
