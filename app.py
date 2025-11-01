@@ -334,7 +334,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
     - Filler word removal: Auto-remove "uh", "um"
     """
     logger.info("=" * 80)
-    logger.info("🚀 DEMO MODE - Connecting to Azure Voice Live API with ALL features")
+    logger.info("🚀 Connecting to Azure Voice Live API with ALL optimizations enabled")
     logger.info(f"Endpoint: {AZURE_AI_ENDPOINT}")
     logger.info(f"Model: {AZURE_AI_MODEL}")
 
