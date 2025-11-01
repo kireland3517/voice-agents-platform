@@ -639,7 +639,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "19.6 - FIX: Use function_call_id parameter (not call_id)",
+        "version": "19.7 - FIX: Both function result methods now use conversation.item.create()",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -986,7 +986,7 @@ async def handle_voicelive_event(
 
             # Send result back to Voice Live
             try:
-                # Step 1: Add function output to conversation
+                # Use conversation.item.create() for function call outputs
                 await voicelive_connection.conversation.item.create(
                     item={
                         "type": "function_call_output",
@@ -994,11 +994,7 @@ async def handle_voicelive_event(
                         "output": json.dumps(result)
                     }
                 )
-                logger.info("✅ Function output added to conversation")
-
-                # Step 2: Trigger response to process the function output
-                await voicelive_connection.response.create()
-                logger.info("✅ Response triggered for function output")
+                logger.info("✅ Function result sent via conversation.item.create()")
             except Exception as e:
                 logger.error(f"❌ Failed to send function result: {e}")
                 logger.error(traceback.format_exc())
@@ -1016,9 +1012,25 @@ async def handle_voicelive_event(
                     call_id = parsed.get('call_id')
 
                     if function_name:
+                        # Track function call
+                        if monitor:
+                            monitor.add_function_call(function_name)
+
                         result = await execute_function(function_name, arguments)
-                        # Send result back via WebSocket
                         logger.info(f"   Function result: {result}")
+
+                        # Send result back via conversation.item.create
+                        try:
+                            await voicelive_connection.conversation.item.create(
+                                item={
+                                    "type": "function_call_output",
+                                    "function_call_id": call_id,
+                                    "output": json.dumps(result)
+                                }
+                            )
+                            logger.info("✅ Function result sent (Method 2)")
+                        except Exception as e:
+                            logger.error(f"❌ Failed to send function result: {e}")
             except:
                 pass  # Not a function call event
 
