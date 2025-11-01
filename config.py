@@ -49,25 +49,26 @@ class ConfigManager:
         if not self.blob_service_client:
             logger.warning("Blob Storage not configured - skipping detailed instructions")
             return None
-
+        
         try:
-            # Use specific filename for senior-life, pattern for others
+            # UPDATED: Use cedar_instructions.md for Senior Life
             if company_id == "senior-life":
                 blob_name = "cedar_instructions.md"
             else:
+                # Fallback pattern for other companies
                 blob_name = f"{company_id}-instructions.txt"
-
+                
             blob_client = self.blob_service_client.get_blob_client(
                 container=self.instructions_container,
                 blob=blob_name
             )
-
+            
             blob_data = blob_client.download_blob()
             instructions_text = blob_data.readall().decode('utf-8')
-
-            logger.info(f"Successfully loaded detailed instructions for {company_id} from Blob Storage (blob: {blob_name})")
+            
+            logger.info(f"Successfully loaded detailed instructions for {company_id} from Blob Storage ({blob_name})")
             return instructions_text
-
+            
         except Exception as e:
             logger.warning(f"Could not load detailed instructions for {company_id}: {e}")
             return None
@@ -164,31 +165,73 @@ class ConfigManager:
             # Get audio-settings
             audio_settings = self.get_json_config_section(company_id, "audio-settings")
             
-            # Apply defaults for audio settings if not present
+            # =========================================================================
+            # RESEARCH-BACKED OPTIMAL SETTINGS (from production PDF research)
+            # =========================================================================
+            
+            # VAD Settings - Research shows these values optimal for voice agents
             if not audio_settings.get('vad-threshold'):
-                audio_settings['vad-threshold'] = 0.3  # Lower = more sensitive to interruptions
+                audio_settings['vad-threshold'] = 0.5  # Research: 0.5 balanced (was 0.3)
             if not audio_settings.get('vad-silence-duration-ms'):
-                audio_settings['vad-silence-duration-ms'] = 500  # OPTIMIZED: Reduced from 800ms (research-backed)
+                audio_settings['vad-silence-duration-ms'] = 500  # Research: 500ms sweet spot
             if not audio_settings.get('vad-prefix-padding-ms'):
-                audio_settings['vad-prefix-padding-ms'] = 200  # Audio captured before speech starts
+                audio_settings['vad-prefix-padding-ms'] = 300  # Research: 300ms optimal (was 200)
+            if not audio_settings.get('vad-end-utterance-timeout-ms'):
+                audio_settings['vad-end-utterance-timeout-ms'] = 1000  # Research: prevents hanging
+                
+            # LLM Settings - Optimized for latency
             if not audio_settings.get('temperature'):
-                audio_settings['temperature'] = 0.8
+                audio_settings['temperature'] = 0.8  # Default for conversational
             if not audio_settings.get('max-response-tokens'):
-                audio_settings['max-response-tokens'] = 1500  # OPTIMIZED: Reduced from 4096 for 20% latency improvement
-
-            # DEMO MODE: Enable all advanced features by default
+                audio_settings['max-response-tokens'] = 1500  # Research: 20% latency improvement from 4096
+            
+            # Transcription Settings - Better accuracy
+            if not audio_settings.get('transcription-temperature'):
+                audio_settings['transcription-temperature'] = 0.0  # Deterministic for consistency
+            if not audio_settings.get('custom-transcription-terms'):
+                # Default domain terms for insurance industry
+                audio_settings['custom-transcription-terms'] = [
+                    "Cedar", "Senior Life Insurance", "Medicare", "Medicaid",
+                    "copay", "deductible", "premium", "beneficiary"
+                ]
+            
+            # Audio Processing Settings - Research-backed chunking
+            if not audio_settings.get('chunk-duration-ms'):
+                audio_settings['chunk-duration-ms'] = 100  # Research: optimal latency/overhead balance
+            if not audio_settings.get('audio-sample-rate'):
+                audio_settings['audio-sample-rate'] = 24000  # Required for Voice Live API
+                
+            # Advanced Features - All enabled by default per research
             if not audio_settings.get('enable-semantic-vad'):
-                audio_settings['enable-semantic-vad'] = True  # 40-60% better turn detection
+                audio_settings['enable-semantic-vad'] = True  # 40-60% fewer false turn endings
             if not audio_settings.get('enable-noise-suppression'):
                 audio_settings['enable-noise-suppression'] = True  # 60% noise reduction
             if not audio_settings.get('enable-echo-cancellation'):
-                audio_settings['enable-echo-cancellation'] = True  # Feedback prevention
+                audio_settings['enable-echo-cancellation'] = True  # Prevents feedback loops
             if not audio_settings.get('enable-audio-transcription'):
-                audio_settings['enable-audio-transcription'] = True  # Whisper quality
+                audio_settings['enable-audio-transcription'] = True  # Whisper for quality
             if not audio_settings.get('remove-filler-words'):
                 audio_settings['remove-filler-words'] = True  # Auto-remove "uh", "um"
-            if not audio_settings.get('vad-end-utterance-timeout-ms'):
-                audio_settings['vad-end-utterance-timeout-ms'] = 1000  # Prevents hanging
+            
+            # Connection & Monitoring Settings
+            if not audio_settings.get('heartbeat-interval-seconds'):
+                audio_settings['heartbeat-interval-seconds'] = 30  # Keep-alive interval
+            if not audio_settings.get('connection-retry-attempts'):
+                audio_settings['connection-retry-attempts'] = 3  # Resilience
+            if not audio_settings.get('token-warning-threshold'):
+                audio_settings['token-warning-threshold'] = 100000  # ~78% of 128k limit
+            if not audio_settings.get('max-turns-before-text-conversion'):
+                audio_settings['max-turns-before-text-conversion'] = 10  # Save tokens
+            
+            # SSML Voice Control Settings
+            if not audio_settings.get('ssml-enabled'):
+                audio_settings['ssml-enabled'] = False  # Can enable for prosody control
+            if not audio_settings.get('ssml-pitch'):
+                audio_settings['ssml-pitch'] = "+5%"  # Research: ±10% optimal
+            if not audio_settings.get('ssml-rate'):
+                audio_settings['ssml-rate'] = "1.0"  # Research: 0.9-1.1x optimal
+            if not audio_settings.get('ssml-style-degree'):
+                audio_settings['ssml-style-degree'] = 1.2  # Research: 1.2-1.5 natural
             
             config['audio-settings'] = audio_settings
             
@@ -198,6 +241,16 @@ class ConfigManager:
             
             company_name = config.get('company-name', 'Unknown')
             logger.info(f"Successfully loaded all config sections for {company_id}: {company_name}")
+            
+            # Log optimization status
+            logger.info(f"""
+            ✅ OPTIMIZATIONS ACTIVE for {company_name}:
+               VAD: threshold={audio_settings['vad-threshold']}, silence={audio_settings['vad-silence-duration-ms']}ms
+               Tokens: max={audio_settings['max-response-tokens']} (optimized for speed)
+               Semantic VAD: {audio_settings['enable-semantic-vad']}
+               Noise Suppression: {audio_settings['enable-noise-suppression']}
+               Chunking: {audio_settings['chunk-duration-ms']}ms optimal chunks
+            """)
             
             return config
             
@@ -209,31 +262,33 @@ class ConfigManager:
         """Get audio fine-tuning settings for a company"""
         audio_settings = self.get_json_config_section(company_id, "audio-settings")
 
-        # Apply defaults if not present
+        # Apply the same research-backed defaults as above
         if not audio_settings.get('vad-threshold'):
-            audio_settings['vad-threshold'] = 0.3  # Lower = more sensitive to interruptions
+            audio_settings['vad-threshold'] = 0.5  # Research: 0.5 balanced
         if not audio_settings.get('vad-silence-duration-ms'):
-            audio_settings['vad-silence-duration-ms'] = 500  # OPTIMIZED: Reduced from 800ms (research-backed)
+            audio_settings['vad-silence-duration-ms'] = 500  # Research: 500ms sweet spot
         if not audio_settings.get('vad-prefix-padding-ms'):
-            audio_settings['vad-prefix-padding-ms'] = 200  # Audio captured before speech starts
+            audio_settings['vad-prefix-padding-ms'] = 300  # Research: 300ms optimal
+        if not audio_settings.get('vad-end-utterance-timeout-ms'):
+            audio_settings['vad-end-utterance-timeout-ms'] = 1000  # Prevents hanging
         if not audio_settings.get('temperature'):
             audio_settings['temperature'] = 0.8
         if not audio_settings.get('max-response-tokens'):
-            audio_settings['max-response-tokens'] = 1500  # OPTIMIZED: Reduced from 4096 for 20% latency improvement
+            audio_settings['max-response-tokens'] = 1500  # 20% latency improvement
+        if not audio_settings.get('transcription-temperature'):
+            audio_settings['transcription-temperature'] = 0.0
 
-        # DEMO MODE: Enable all advanced features by default
+        # Ensure all advanced features enabled
         if not audio_settings.get('enable-semantic-vad'):
-            audio_settings['enable-semantic-vad'] = True  # 40-60% better turn detection
+            audio_settings['enable-semantic-vad'] = True
         if not audio_settings.get('enable-noise-suppression'):
-            audio_settings['enable-noise-suppression'] = True  # 60% noise reduction
+            audio_settings['enable-noise-suppression'] = True
         if not audio_settings.get('enable-echo-cancellation'):
-            audio_settings['enable-echo-cancellation'] = True  # Feedback prevention
+            audio_settings['enable-echo-cancellation'] = True
         if not audio_settings.get('enable-audio-transcription'):
-            audio_settings['enable-audio-transcription'] = True  # Whisper quality
+            audio_settings['enable-audio-transcription'] = True
         if not audio_settings.get('remove-filler-words'):
-            audio_settings['remove-filler-words'] = True  # Auto-remove "uh", "um"
-        if not audio_settings.get('vad-end-utterance-timeout-ms'):
-            audio_settings['vad-end-utterance-timeout-ms'] = 1000  # Prevents hanging
+            audio_settings['remove-filler-words'] = True
 
         return audio_settings
     
