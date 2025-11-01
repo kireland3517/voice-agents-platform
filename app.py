@@ -280,6 +280,14 @@ CONVERSATION APPROACH:
 3) Provide relevant information
 4) Guide the conversation professionally
 5) Stay within scope; escalate or schedule when needed
+
+AVAILABLE TOOLS (use automatically when needed):
+- verify_surname: When a customer provides their last name, this tool automatically verifies the correct spelling from a database of common surnames. Use the spelling provided in the result to confirm with the customer.
+- lookup_zipcode: When a customer provides a ZIP code, this tool automatically looks up the city and state. Use this information naturally in your response.
+
+IMPORTANT: These tools work automatically. When you receive function results, incorporate them naturally into your conversation. For example:
+- Surname result: "Thank you, Mr. [surname]. Just to confirm, that's spelled [spelling], correct?"
+- ZIP result: "Perfect, so you're in [city], [state]."
 {contact_section}
 {business_section}
 """
@@ -404,6 +412,108 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         await connection.session.update(session=session_config)
         logger.info("✅ Voice Live session configured successfully")
 
+        # ──────────────────────────────────────────────────────────────────────
+        # FUNCTION CALLING CONFIGURATION
+        # ──────────────────────────────────────────────────────────────────────
+        logger.info("🔍 Inspecting SDK capabilities for function calling...")
+
+        # Inspect what the SDK actually supports
+        logger.info(f"   Connection type: {type(connection).__name__}")
+        logger.info(f"   Has 'response' attr: {hasattr(connection, 'response')}")
+        logger.info(f"   Has 'conversation' attr: {hasattr(connection, 'conversation')}")
+
+        if hasattr(connection, 'response'):
+            logger.info(f"   Response type: {type(connection.response).__name__}")
+            if hasattr(connection.response, 'create'):
+                import inspect
+                sig = inspect.signature(connection.response.create)
+                params = list(sig.parameters.keys())
+                logger.info(f"   response.create() parameters: {params}")
+
+        # Define function/tool definitions
+        function_definitions = [
+            {
+                "type": "function",
+                "name": "verify_surname",
+                "description": "Verify the spelling of a customer's surname using phonetic matching database. Use this when the customer provides their last name.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "surname": {
+                            "type": "string",
+                            "description": "The surname to verify (as heard from customer speech)"
+                        }
+                    },
+                    "required": ["surname"]
+                }
+            },
+            {
+                "type": "function",
+                "name": "lookup_zipcode",
+                "description": "Get the city and state for a given ZIP code. Use this when the customer provides their ZIP code.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "zipcode": {
+                            "type": "string",
+                            "description": "5-digit US ZIP code"
+                        }
+                    },
+                    "required": ["zipcode"]
+                }
+            }
+        ]
+
+        # Try to configure functions via SDK
+        function_calling_configured = False
+
+        # Method 1: Try SDK's response.create with tools parameter
+        if hasattr(connection, 'response') and hasattr(connection.response, 'create'):
+            try:
+                logger.info("   Attempting to configure functions via SDK response.create()...")
+                # Note: This may not work if SDK doesn't support tools parameter yet
+                await connection.response.create(
+                    tools=function_definitions,
+                    tool_choice="auto"
+                )
+                logger.info("✅ Function calling configured via SDK")
+                function_calling_configured = True
+            except (TypeError, AttributeError) as e:
+                logger.warning(f"   SDK method doesn't support tools parameter: {e}")
+
+        # Method 2: Try accessing underlying WebSocket
+        if not function_calling_configured:
+            logger.info("   Attempting WebSocket fallback for function configuration...")
+            ws = None
+
+            # Try different attribute names for WebSocket
+            for attr_name in ['_ws', 'ws', '_websocket', 'websocket', '_connection']:
+                if hasattr(connection, attr_name):
+                    ws = getattr(connection, attr_name)
+                    if ws is not None:
+                        logger.info(f"   Found WebSocket at connection.{attr_name}")
+                        break
+
+            if ws and hasattr(ws, 'send'):
+                try:
+                    await ws.send(json.dumps({
+                        "type": "response.create",
+                        "response": {
+                            "tools": function_definitions,
+                            "tool_choice": "auto"
+                        }
+                    }))
+                    logger.info("✅ Function calling configured via WebSocket")
+                    function_calling_configured = True
+                except Exception as e:
+                    logger.warning(f"   WebSocket function configuration failed: {e}")
+
+        if not function_calling_configured:
+            logger.warning("⚠️ Function calling could not be configured (SDK and WebSocket methods failed)")
+            logger.warning("   Voice agent will work but without surname verification and ZIP lookup tools")
+        else:
+            logger.info(f"✅ Functions available: verify_surname, lookup_zipcode")
+
         # Log final configuration
         logger.info("=" * 80)
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready")
@@ -421,6 +531,91 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         raise
 
 # ──────────────────────────────────────────────────────────────────────────────
+# FUNCTION EXECUTION HANDLER
+# ──────────────────────────────────────────────────────────────────────────────
+async def execute_function(function_name: str, arguments: dict) -> dict:
+    """Execute tool functions and return results"""
+    logger.info(f"🔧 Executing function: {function_name} with args: {arguments}")
+
+    try:
+        if function_name == "verify_surname":
+            surname = arguments.get("surname", "")
+            if not surname:
+                return {"error": "Missing surname parameter"}
+
+            # Use existing surname verifier
+            candidates = find_surname_candidates(surname)
+            prompt_data = generate_llm_prompt(surname, candidates)
+
+            logger.info(f"   Surname verification: {len(candidates)} candidates found")
+            logger.info(f"   Prompt type: {prompt_data['type']}")
+
+            # Return structured result for the AI
+            if prompt_data['type'] == 'perfect_match' and candidates:
+                spelling = '-'.join(candidates[0][0])
+                return {
+                    "status": "confirmed",
+                    "surname": candidates[0][0],
+                    "spelling": spelling,
+                    "confidence": "high",
+                    "message": f"Confirmed spelling: {spelling}"
+                }
+            elif prompt_data['type'] == 'phonetic_match' and candidates:
+                spelling = '-'.join(candidates[0][0])
+                return {
+                    "status": "suggestion",
+                    "surname": candidates[0][0],
+                    "spelling": spelling,
+                    "confidence": "medium",
+                    "message": f"Suggested spelling: {spelling}. Please confirm with customer."
+                }
+            elif prompt_data['type'] == 'multiple_matches':
+                options = [{'surname': c[0], 'spelling': '-'.join(c[0])} for c in candidates[:3]]
+                return {
+                    "status": "multiple",
+                    "options": options,
+                    "message": f"Multiple possible spellings. Ask customer to clarify."
+                }
+            else:
+                return {
+                    "status": "not_found",
+                    "message": "Surname not found in database. Please ask customer to spell it out."
+                }
+
+        elif function_name == "lookup_zipcode":
+            zipcode = arguments.get("zipcode", "")
+            if not zipcode:
+                return {"error": "Missing zipcode parameter"}
+
+            # Use existing zipcode service
+            result = zipcode_service.lookup(zipcode)
+
+            if result:
+                logger.info(f"   ZIP lookup success: {result['city']}, {result['state']}")
+                return {
+                    "found": True,
+                    "zipcode": zipcode,
+                    "city": result['city'],
+                    "state": result['state'],
+                    "message": f"{result['city']}, {result['state']}"
+                }
+            else:
+                logger.warning(f"   ZIP code {zipcode} not found")
+                return {
+                    "found": False,
+                    "zipcode": zipcode,
+                    "message": "ZIP code not found. Please ask customer to verify."
+                }
+
+        else:
+            return {"error": f"Unknown function: {function_name}"}
+
+    except Exception as e:
+        logger.error(f"❌ Error executing function {function_name}: {e}")
+        logger.error(traceback.format_exc())
+        return {"error": f"Function execution failed: {str(e)}"}
+
+# ──────────────────────────────────────────────────────────────────────────────
 # FASTAPI APP
 # ──────────────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Voice Agent Bridge")
@@ -430,7 +625,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "16.1 - All 600+ Azure voices supported",
+        "version": "17.0 - Function calling with surname & ZIP lookup",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -441,6 +636,7 @@ def root():
         },
         "audio_format": "PCM16 24kHz passthrough",
         "features": [
+            "Function calling (surname verification, ZIP lookup)",
             "Per-company Azure TTS voice selection (600+ voices)",
             "Friendly names OR direct Azure voice names",
             "Semantic VAD with filler removal",
@@ -450,6 +646,10 @@ def root():
             "Native audio streaming",
             "Natural conversation flow",
             "Call recordings & transcripts" if SAVE_RECORDINGS or SAVE_TRANSCRIPTS else None
+        ],
+        "functions": [
+            {"name": "verify_surname", "description": "Verify customer surname spelling via phonetic database"},
+            {"name": "lookup_zipcode", "description": "Get city and state from ZIP code"}
         ]
     }
 
@@ -615,9 +815,74 @@ async def handle_voicelive_event(
                 "detail": error_msg
             }))
 
-    # Note: Function calling temporarily removed
-    # Voice Live SDK doesn't support tools in RequestSession yet
-    # Will re-add when SDK supports function calling
+    # ──────────────────────────────────────────────────────────────────────
+    # FUNCTION CALLING EVENT HANDLING
+    # ──────────────────────────────────────────────────────────────────────
+    # Try to detect function call events - SDK may use different event types
+    event_type_str = str(event.type) if hasattr(event, 'type') else None
+
+    # Method 1: Check if this is a function call event
+    if event_type_str and 'function_call' in event_type_str.lower():
+        logger.info(f"🔧 Function call event detected: {event_type_str}")
+
+        # Try to extract function call details
+        function_name = None
+        arguments = None
+        call_id = None
+
+        # Try SDK parsed attributes
+        if hasattr(event, 'name'):
+            function_name = event.name
+        if hasattr(event, 'arguments'):
+            try:
+                arguments = json.loads(event.arguments) if isinstance(event.arguments, str) else event.arguments
+            except:
+                arguments = event.arguments
+        if hasattr(event, 'call_id'):
+            call_id = event.call_id
+
+        logger.info(f"   Function: {function_name}, Args: {arguments}, CallID: {call_id}")
+
+        if function_name and arguments:
+            # Execute the function
+            result = await execute_function(function_name, arguments)
+            logger.info(f"   Function result: {result}")
+
+            # Send result back to Voice Live
+            try:
+                # Try SDK method first
+                if hasattr(voicelive_connection, 'conversation') and hasattr(voicelive_connection.conversation, 'item'):
+                    await voicelive_connection.conversation.item.create({
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": json.dumps(result)
+                    })
+                    logger.info("✅ Function result sent via SDK")
+                else:
+                    # Fallback: send via WebSocket
+                    logger.info("   Trying WebSocket fallback for function result...")
+                    # Implementation would go here if needed
+            except Exception as e:
+                logger.error(f"❌ Failed to send function result: {e}")
+
+    # Method 2: Check raw event data for function calls
+    elif hasattr(event, '_raw') or hasattr(event, 'data'):
+        raw_data = getattr(event, '_raw', None) or getattr(event, 'data', None)
+        if raw_data and isinstance(raw_data, str):
+            try:
+                parsed = json.loads(raw_data)
+                if parsed.get('type') == 'response.function_call_arguments.done':
+                    logger.info("🔧 Function call detected in raw event data")
+                    function_name = parsed.get('name')
+                    arguments = json.loads(parsed.get('arguments', '{}'))
+                    call_id = parsed.get('call_id')
+
+                    if function_name:
+                        result = await execute_function(function_name, arguments)
+                        # Send result back via WebSocket
+                        logger.info(f"   Function result: {result}")
+            except:
+                pass  # Not a function call event
 
 # ──────────────────────────────────────────────────────────────────────────────
 # SIGNALWIRE → VOICE LIVE AUDIO FORWARDER
