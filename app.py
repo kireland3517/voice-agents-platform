@@ -1013,7 +1013,14 @@ async def handle_voicelive_event(
 
                 # Send a *new* error message back to the LLM via the same bypass
                 try:
-                    error_output = {"error": "Tool submission failed. Do not retry. Ask the user to provide the information manually."}
+                    # Create context-appropriate error message based on function type
+                    if function_name == "verify_surname":
+                        error_output = {"result": "Unable to verify. Ask the caller: Could you please spell your last name for me?"}
+                    elif function_name == "lookup_zipcode":
+                        error_output = {"result": "Unable to verify. Ask the caller: Could you let me know your city and state?"}
+                    else:
+                        error_output = {"result": "Unable to verify. Please ask the caller for the information."}
+
                     error_message = {
                         "type": "conversation.item.create",
                         "item": {
@@ -1080,7 +1087,14 @@ async def handle_voicelive_event(
 
                             # Send a *new* error message back to the LLM via the same bypass
                             try:
-                                error_output = {"error": "Tool submission failed. Do not retry. Ask the user to provide the information manually."}
+                                # Create context-appropriate error message based on function type
+                                if function_name == "verify_surname":
+                                    error_output = {"result": "Unable to verify. Ask the caller: Could you please spell your last name for me?"}
+                                elif function_name == "lookup_zipcode":
+                                    error_output = {"result": "Unable to verify. Ask the caller: Could you let me know your city and state?"}
+                                else:
+                                    error_output = {"result": "Unable to verify. Please ask the caller for the information."}
+
                                 error_message = {
                                     "type": "conversation.item.create",
                                     "item": {
