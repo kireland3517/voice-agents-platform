@@ -183,7 +183,7 @@ class ConfigManager:
             if not audio_settings.get('temperature'):
                 audio_settings['temperature'] = 0.8  # Default for conversational
 
-            # Force the optimal setting for gpt-realtime-mini
+            # Force the optimal setting for gpt-4o-mini-realtime-preview
             # The 4096 value in AppConfig is legacy and causes latency
             audio_settings['max-response-tokens'] = 1500  # Research: 20% latency improvement from 4096
             
@@ -277,7 +277,7 @@ class ConfigManager:
         if not audio_settings.get('temperature'):
             audio_settings['temperature'] = 0.8
 
-        # Force the optimal setting for gpt-realtime-mini
+        # Force the optimal setting for gpt-4o-mini-realtime-preview
         audio_settings['max-response-tokens'] = 1500  # 20% latency improvement
         if not audio_settings.get('transcription-temperature'):
             audio_settings['transcription-temperature'] = 0.0

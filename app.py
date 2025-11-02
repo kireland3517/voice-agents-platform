@@ -56,7 +56,7 @@ load_dotenv()
 
 AZURE_AI_ENDPOINT = os.getenv("AZURE_AI_ENDPOINT", "").strip()
 AZURE_AI_KEY = os.getenv("AZURE_AI_KEY", "").strip()
-AZURE_AI_MODEL = os.getenv("AZURE_AI_MODEL", "gpt-realtime-mini").strip()
+AZURE_AI_MODEL = os.getenv("AZURE_AI_MODEL", "gpt-4o-mini-realtime-preview").strip()
 
 SAVE_RECORDINGS = os.getenv("SAVE_RECORDINGS", "true").lower() == "true"
 SAVE_TRANSCRIPTS = os.getenv("SAVE_TRANSCRIPTS", "true").lower() == "true"

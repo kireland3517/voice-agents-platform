@@ -36,7 +36,7 @@ Phone Call → SignalWire → Azure Voice Live API → AI Processing → Voice R
 
 ### Technology Stack
 
-- **AI:** Azure Voice Live API (gpt-realtime-mini)
+- **AI:** Azure Voice Live API (gpt-4o-mini-realtime-preview)
 - **Speech:** Whisper (transcription) + Azure Neural TTS (synthesis)
 - **Telephony:** SignalWire (phone numbers, PSTN integration)
 - **Backend:** Python 3.12, Quart (async web framework)
@@ -206,7 +206,7 @@ Required:
 ```
 AZURE_AI_ENDPOINT=https://...cognitiveservices.azure.com
 AZURE_AI_KEY=<key>
-AZURE_AI_MODEL=gpt-realtime-mini
+AZURE_AI_MODEL=gpt-4o-mini-realtime-preview
 APP_CONFIG_CONNECTION_STRING=<connection-string>
 BLOB_CONNECTION_STRING=<connection-string>
 ```

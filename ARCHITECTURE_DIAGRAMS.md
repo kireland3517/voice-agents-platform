@@ -40,7 +40,7 @@ graph TB
     subgraph "AI/Speech Layer"
         VoiceLive[Azure AI Foundry<br/>Voice Live API]
         STT[Speech-to-Text<br/>Whisper]
-        LLM[LLM Processing<br/>gpt-realtime-mini]
+        LLM[LLM Processing<br/>gpt-4o-mini-realtime-preview]
         TTS[Text-to-Speech<br/>Azure Neural Voice]
     end
 

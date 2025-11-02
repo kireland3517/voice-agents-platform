@@ -56,7 +56,7 @@ Real-time, human-sounding AI voice agent platform supporting multiple companies 
 
 **Content:**
 - Azure AI endpoint and API key (Voice Live API)
-- Azure AI model deployment name (gpt-realtime-mini)
+- Azure AI model deployment name (gpt-4o-mini-realtime-preview)
 - App Configuration connection string
 - Blob Storage connection string
 - Container names (instructions, recordings, transcripts)
@@ -173,7 +173,7 @@ Real-time, human-sounding AI voice agent platform supporting multiple companies 
 
 ### Azure Voice Live API
 **SDK:** azure-ai-voicelive
-**Model:** gpt-realtime-mini
+**Model:** gpt-4o-mini-realtime-preview
 **Voice:** en-US-FableTurboMultilingualNeural (Azure TTS)
 **Audio:** PCM16, 24kHz, mono, bidirectional streaming
 **Features:**
