@@ -637,7 +637,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "26.0 - Reverted to non-SSML instructions (Voice Live doesn't support SSML)",
+        "version": "27.0 - SSML instructions with Azure Neural TTS",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
