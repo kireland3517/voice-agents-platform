@@ -51,9 +51,9 @@ class ConfigManager:
             return None
         
         try:
-            # UPDATED: Use cedar_instructions.md for Senior Life
+            # UPDATED: Use cedar_instructions_SSML.md for Senior Life
             if company_id == "senior-life":
-                blob_name = "cedar_instructions.md"
+                blob_name = "cedar_instructions_SSML.md"
             else:
                 # Fallback pattern for other companies
                 blob_name = f"{company_id}-instructions.txt"
