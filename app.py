@@ -984,7 +984,7 @@ async def handle_voicelive_event(
             result = await execute_function(function_name, arguments)
             logger.info(f"   Function result: {result}")
 
-            # Send result back to Voice Live
+            bypass_succeeded = False
             try:
                 # Build the raw message format (bypassing SDK)
                 raw_message = {
@@ -1000,42 +1000,52 @@ async def handle_voicelive_event(
                 ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
 
                 if not ws:
-                    # NEW: Explicitly raise an error if the SDK attribute is missing
                     raise AttributeError("Cannot access internal '_ws' or 'ws' attribute on connection object.")
 
                 await ws.send(json.dumps(raw_message))
                 logger.info("✅ Function result sent via raw WebSocket")
+                bypass_succeeded = True
 
             except Exception as e:
-                # CRITICAL FIX: If sending fails, inject an error message
-                # that the LLM can understand and act on.
+                # The bypass failed. Log it.
                 logger.error(f"❌ FAILED TO SEND FUNCTION RESULT (SDK Bypass Failure): {e}")
+                logger.error(traceback.format_exc())
+                # 'bypass_succeeded' remains False
 
-                # Send a *new* error message back to the LLM via the same bypass
+            # --- NEW ROBUST RECOVERY BLOCK ---
+            # If the bypass failed, we MUST tell the AI to recover
+            # by triggering a new response and injecting context.
+            if not bypass_succeeded:
+                logger.warning("Bypass failed. Triggering new response for LLM recovery.")
                 try:
-                    # Create context-appropriate error message based on function type
+                    # Build context-appropriate recovery message
                     if function_name == "verify_surname":
-                        error_output = {"result": "Unable to verify. Ask the caller: Could you please spell your last name for me?"}
+                        recovery_prompt = (
+                            f"IMPORTANT: Your tool call for '{function_name}' just failed. "
+                            "Do not mention the tool or the error. "
+                            "Simply ask the caller: 'Could you please spell your last name for me?'"
+                        )
                     elif function_name == "lookup_zipcode":
-                        error_output = {"result": "Unable to verify. Ask the caller: Could you let me know your city and state?"}
+                        recovery_prompt = (
+                            f"IMPORTANT: Your tool call for '{function_name}' just failed. "
+                            "Do not mention the tool or the error. "
+                            "Simply ask the caller: 'Could you let me know your city and state?'"
+                        )
                     else:
-                        error_output = {"result": "Unable to verify. Please ask the caller for the information."}
+                        recovery_prompt = (
+                            f"IMPORTANT: Your tool call for '{function_name}' just failed. "
+                            "Do not mention the tool or the error. "
+                            "Gracefully ask the user to provide the information manually."
+                        )
 
-                    error_message = {
-                        "type": "conversation.item.create",
-                        "item": {
-                            "type": "function_call_output",
-                            "call_id": call_id,
-                            "output": json.dumps(error_output)
-                        }
-                    }
-                    if ws:
-                        await ws.send(json.dumps(error_message))
-                        logger.warning("✅ Injected tool failure message to LLM for graceful recovery.")
-                    else:
-                        logger.error("❌ Cannot even send error message; WebSocket attribute is null.")
-                except Exception as final_e:
-                    logger.critical(f"❌ Total bypass failure. Could not send original result OR error result: {final_e}")
+                    # Use the SDK's *supported* response.create method
+                    # to force the AI to speak again with new instructions
+                    await voicelive_connection.response.create(
+                        additional_instructions=recovery_prompt
+                    )
+                    logger.info("✅ Triggered SDK response.create() for graceful tool failure recovery.")
+                except Exception as recovery_e:
+                    logger.critical(f"❌ TOTAL FAILURE: Could not send bypass AND could not trigger recovery response: {recovery_e}")
                     logger.error(traceback.format_exc())
 
     # Method 2: Check raw event data for function calls
@@ -1058,7 +1068,7 @@ async def handle_voicelive_event(
                         result = await execute_function(function_name, arguments)
                         logger.info(f"   Function result: {result}")
 
-                        # Send result back via raw WebSocket (Method 2)
+                        bypass_succeeded = False
                         try:
                             # Build the raw message format (bypassing SDK)
                             raw_message = {
@@ -1074,42 +1084,52 @@ async def handle_voicelive_event(
                             ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
 
                             if not ws:
-                                # NEW: Explicitly raise an error if the SDK attribute is missing
                                 raise AttributeError("Cannot access internal '_ws' or 'ws' attribute on connection object.")
 
                             await ws.send(json.dumps(raw_message))
                             logger.info("✅ Function result sent via raw WebSocket (Method 2)")
+                            bypass_succeeded = True
 
                         except Exception as e:
-                            # CRITICAL FIX: If sending fails, inject an error message
-                            # that the LLM can understand and act on.
+                            # The bypass failed. Log it.
                             logger.error(f"❌ FAILED TO SEND FUNCTION RESULT (SDK Bypass Failure - Method 2): {e}")
+                            logger.error(traceback.format_exc())
+                            # 'bypass_succeeded' remains False
 
-                            # Send a *new* error message back to the LLM via the same bypass
+                        # --- NEW ROBUST RECOVERY BLOCK ---
+                        # If the bypass failed, we MUST tell the AI to recover
+                        # by triggering a new response and injecting context.
+                        if not bypass_succeeded:
+                            logger.warning("Bypass failed (Method 2). Triggering new response for LLM recovery.")
                             try:
-                                # Create context-appropriate error message based on function type
+                                # Build context-appropriate recovery message
                                 if function_name == "verify_surname":
-                                    error_output = {"result": "Unable to verify. Ask the caller: Could you please spell your last name for me?"}
+                                    recovery_prompt = (
+                                        f"IMPORTANT: Your tool call for '{function_name}' just failed. "
+                                        "Do not mention the tool or the error. "
+                                        "Simply ask the caller: 'Could you please spell your last name for me?'"
+                                    )
                                 elif function_name == "lookup_zipcode":
-                                    error_output = {"result": "Unable to verify. Ask the caller: Could you let me know your city and state?"}
+                                    recovery_prompt = (
+                                        f"IMPORTANT: Your tool call for '{function_name}' just failed. "
+                                        "Do not mention the tool or the error. "
+                                        "Simply ask the caller: 'Could you let me know your city and state?'"
+                                    )
                                 else:
-                                    error_output = {"result": "Unable to verify. Please ask the caller for the information."}
+                                    recovery_prompt = (
+                                        f"IMPORTANT: Your tool call for '{function_name}' just failed. "
+                                        "Do not mention the tool or the error. "
+                                        "Gracefully ask the user to provide the information manually."
+                                    )
 
-                                error_message = {
-                                    "type": "conversation.item.create",
-                                    "item": {
-                                        "type": "function_call_output",
-                                        "call_id": call_id,
-                                        "output": json.dumps(error_output)
-                                    }
-                                }
-                                if ws:
-                                    await ws.send(json.dumps(error_message))
-                                    logger.warning("✅ Injected tool failure message to LLM for graceful recovery (Method 2).")
-                                else:
-                                    logger.error("❌ Cannot even send error message; WebSocket attribute is null.")
-                            except Exception as final_e:
-                                logger.critical(f"❌ Total bypass failure (Method 2). Could not send original result OR error result: {final_e}")
+                                # Use the SDK's *supported* response.create method
+                                # to force the AI to speak again with new instructions
+                                await voicelive_connection.response.create(
+                                    additional_instructions=recovery_prompt
+                                )
+                                logger.info("✅ Triggered SDK response.create() for graceful tool failure recovery (Method 2).")
+                            except Exception as recovery_e:
+                                logger.critical(f"❌ TOTAL FAILURE (Method 2): Could not send bypass AND could not trigger recovery response: {recovery_e}")
                                 logger.error(traceback.format_exc())
             except:
                 pass  # Not a function call event
