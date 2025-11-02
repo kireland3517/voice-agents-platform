@@ -375,12 +375,12 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             rate="0.85",  # Much slower for elderly customers
             pitch="+0%",  # Neutral pitch - calm and clear
             volume="+15%",  # Louder for hearing clarity
-            style="customerservice",  # Professional, helpful tone
-            style_degree=1.2,  # Balanced expressiveness
-            temperature=0.85  # Natural variation for HD voices
+            style="customerservice"  # Professional, helpful tone
+            # NOTE: style_degree and temperature are NOT supported by AzureStandardVoice in the current SDK
+            # These parameters may be available in the LLM session config instead
         )
 
-        logger.info(f"   Voice properties (elderly-optimized): rate=0.85, pitch=+0%, volume=+15%, style=customerservice, style_degree=1.2, temp=0.85")
+        logger.info(f"   Voice properties (elderly-optimized): rate=0.85, pitch=+0%, volume=+15%, style=customerservice")
 
         # Configure Semantic VAD - ALWAYS ON for optimal elderly customer experience
         # Hardcoded configuration optimized for senior life insurance use case
@@ -486,7 +486,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info("=" * 80)
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
         logger.info(f"   Voice: {azure_voice_name} (Azure HD Neural TTS)")
-        logger.info(f"   Voice Config: rate=0.85, pitch=+0%, volume=+15%, style=customerservice, temp=0.85")
+        logger.info(f"   Voice Config: rate=0.85, pitch=+0%, volume=+15%, style=customerservice")
         logger.info(f"   VAD: Semantic (threshold=0.5, silence=600ms, end_utterance_timeout=2000ms)")
         logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.7)}, max_tokens={audio_settings.get('max-response-tokens', 200)}")
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}")
