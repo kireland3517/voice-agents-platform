@@ -358,7 +358,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         use_noise_suppression = audio_settings.get('enable-noise-suppression', True)
         use_echo_cancellation = audio_settings.get('enable-echo-cancellation', True)
         use_transcription = audio_settings.get('enable-audio-transcription', True)
-        remove_fillers = audio_settings.get('remove-filler-words', True)
+        remove_fillers = audio_settings.get('remove-filler-words', False)  # Default to False - respect natural speech
 
         # Configure Azure TTS voice based on company configuration
         # Support both friendly names (cedar, alloy) and direct Azure voice names
