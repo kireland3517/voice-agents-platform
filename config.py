@@ -196,10 +196,8 @@ class ConfigManager:
                     "Cedar, Senior Life Insurance, Medicare, Medicaid, "
                     "copay, deductible, premium, beneficiary"
                 )
-            
-            # Audio Processing Settings - Research-backed chunking
-            if not audio_settings.get('chunk-duration-ms'):
-                audio_settings['chunk-duration-ms'] = 100  # Research: optimal latency/overhead balance
+
+            # Audio Processing Settings
             if not audio_settings.get('audio-sample-rate'):
                 audio_settings['audio-sample-rate'] = 24000  # Required for Voice Live API
                 
@@ -252,7 +250,6 @@ class ConfigManager:
                Tokens: max={audio_settings['max-response-tokens']} (optimized for speed)
                Semantic VAD: {audio_settings['enable-semantic-vad']}
                Noise Suppression: {audio_settings['enable-noise-suppression']}
-               Chunking: {audio_settings['chunk-duration-ms']}ms optimal chunks
             """)
             
             return config

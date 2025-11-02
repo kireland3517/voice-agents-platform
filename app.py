@@ -27,7 +27,6 @@ from azure.core.credentials import AzureKeyCredential
 from azure.ai.voicelive.aio import connect
 from azure.ai.voicelive.models import (
     RequestSession,
-    ServerVad,
     AzureSemanticVad,
     AudioNoiseReduction,
     AudioEchoCancellation,
@@ -348,17 +347,10 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
 
         logger.info("✅ Voice Live connection established")
 
-        # Extract configuration
-        vad_threshold = float(audio_settings.get('vad-threshold', 0.3))
-        vad_prefix_padding_ms = int(audio_settings.get('vad-prefix-padding-ms', 200))
-        vad_silence_duration_ms = int(audio_settings.get('vad-silence-duration-ms', 500))
-
         # Feature flags (all TRUE by default in demo mode)
-        use_semantic_vad = audio_settings.get('enable-semantic-vad', True)
         use_noise_suppression = audio_settings.get('enable-noise-suppression', True)
         use_echo_cancellation = audio_settings.get('enable-echo-cancellation', True)
         use_transcription = audio_settings.get('enable-audio-transcription', True)
-        remove_fillers = audio_settings.get('remove-filler-words', False)  # Default to False - respect natural speech
 
         # Configure Azure TTS voice based on company configuration
         # Support both friendly names (cedar, alloy) and direct Azure voice names
@@ -375,44 +367,35 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             azure_voice_name = "en-US-FableTurboMultilingualNeural"
             logger.warning(f"⚠️ Voice '{voice_name}' not recognized, using default: {azure_voice_name}")
 
-        # Get voice customization settings from config
-        voice_rate = audio_settings.get('voice-rate', '0.95')  # Slightly slower for clarity (0.5-1.5)
-        voice_pitch = audio_settings.get('voice-pitch', '+0%')  # Neutral pitch (-50% to +50%, needs + prefix)
-        voice_volume = audio_settings.get('voice-volume', 'default')  # soft/default/loud
-        voice_style = audio_settings.get('voice-style', 'friendly')  # friendly/cheerful/professional
-        voice_temperature = float(audio_settings.get('voice-temperature', 0.7))  # 0.0-1.0 for HD voices (more natural variation)
-
-        # Configure Azure TTS voice with JSON-based properties (not inline SSML)
+        # Configure Azure HD TTS voice optimized for ELDERLY customers
+        # Static configuration - optimized for senior life insurance use case
         voice_config = AzureStandardVoice(
-            name=azure_voice_name,
+            name=azure_voice_name,  # Uses HD voice (en-US-Andrew:DragonHDLatestNeural for Cedar)
             type="azure-standard",
-            rate=voice_rate,
-            pitch=voice_pitch,
-            volume=voice_volume,
-            style=voice_style,
-            temperature=voice_temperature  # HD voices only
+            rate="0.85",  # Much slower for elderly customers
+            pitch="+0%",  # Neutral pitch - calm and clear
+            volume="+15%",  # Louder for hearing clarity
+            style="customerservice",  # Professional, helpful tone
+            style_degree=1.2,  # Balanced expressiveness
+            temperature=0.85  # Natural variation for HD voices
         )
 
-        logger.info(f"   Voice properties: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}, temp={voice_temperature}")
+        logger.info(f"   Voice properties (elderly-optimized): rate=0.85, pitch=+0%, volume=+15%, style=customerservice, style_degree=1.2, temp=0.85")
 
-        # Configure VAD (semantic or standard)
-        if use_semantic_vad:
-            # Use Semantic VAD with filler word removal
-            turn_detection_config = AzureSemanticVad(
-                threshold=vad_threshold,
-                prefix_padding_ms=vad_prefix_padding_ms,
-                silence_duration_ms=vad_silence_duration_ms,
-                remove_filler_words=remove_fillers
-            )
-            logger.info(f"✅ Semantic VAD ENABLED (threshold={vad_threshold}, silence={vad_silence_duration_ms}ms, filler_removal={remove_fillers})")
-        else:
-            # Use standard Server VAD
-            turn_detection_config = ServerVad(
-                threshold=vad_threshold,
-                prefix_padding_ms=vad_prefix_padding_ms,
-                silence_duration_ms=vad_silence_duration_ms
-            )
-            logger.info(f"✅ Server VAD configured (threshold={vad_threshold}, silence={vad_silence_duration_ms}ms)")
+        # Configure Semantic VAD - ALWAYS ON for optimal elderly customer experience
+        # Hardcoded configuration optimized for senior life insurance use case
+        turn_detection_config = AzureSemanticVad(
+            threshold=0.5,  # Higher threshold = less sensitive, fewer false triggers
+            prefix_padding_ms=300,  # More context
+            silence_duration_ms=600,  # Longer for elderly customers
+            remove_filler_words=False,  # KEEP customer's natural speech
+            end_of_utterance_detection={
+                "model": "semantic_detection_v1",
+                "threshold": 0.01,  # Very lenient to avoid false interruptions
+                "timeout": 2000  # More patience for elderly customers
+            }
+        )
+        logger.info(f"✅ Semantic VAD ENABLED (threshold=0.5, silence=600ms, filler_removal=False, end_utterance_timeout=2000ms)")
 
         # Configure noise suppression
         noise_reduction = None
@@ -448,17 +431,18 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         # ──────────────────────────────────────────────────────────────────────
         logger.info("🔧 Configuring function calling tools...")
 
-        # Define tools using FunctionTool SDK class
+        # Define tools using FunctionTool SDK class (compliance-optimized)
         tools = [
             FunctionTool(
                 name="lookup_zipcode",
-                description="Get the city and state for a given ZIP code. Use this when the customer provides their ZIP code.",
+                description="Look up city and state from ZIP code. Use this when the customer provides their ZIP code to verify their location.",
                 parameters={
                     "type": "object",
                     "properties": {
                         "zipcode": {
                             "type": "string",
-                            "description": "5-digit US ZIP code"
+                            "description": "5-digit US ZIP code",
+                            "pattern": "^[0-9]{5}$"  # Strict validation: exactly 5 digits
                         }
                     },
                     "required": ["zipcode"]
@@ -466,7 +450,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             ),
             FunctionTool(
                 name="transfer_window_check",
-                description="Check if live agent transfers are currently available. Transfer window: Monday-Saturday, 8:00 AM - 2:00 AM Eastern Time. Use this to determine if you should transfer the customer or schedule a callback.",
+                description="Check if live agent transfers are currently available based on business hours. Transfer window: Monday-Saturday, 8:00 AM - 2:00 AM Eastern Time. Use this to determine if you should offer transfer or schedule a callback.",
                 parameters={
                     "type": "object",
                     "properties": {},
@@ -478,6 +462,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
 
         # Create session configuration using SDK typed models
         session_config = RequestSession(
+            model="gpt-realtime-mini",  # Explicit model selection for Voice Live API
             modalities=[Modality.TEXT, Modality.AUDIO],
             instructions=company_instructions,
             voice=voice_config,
@@ -487,8 +472,8 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             input_audio_noise_reduction=noise_reduction,
             input_audio_echo_cancellation=echo_cancellation,
             input_audio_transcription=transcription,
-            temperature=float(audio_settings.get("temperature", 0.8)),
-            max_response_output_tokens=int(audio_settings.get("max-response-tokens", 1500)),
+            temperature=float(audio_settings.get("temperature", 0.7)),  # Model temperature (different from voice temp)
+            max_response_output_tokens=int(audio_settings.get("max-response-tokens", 200)),  # Concise responses
             tools=tools,
             tool_choice="auto"
         )
@@ -499,12 +484,12 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
 
         # Log final configuration
         logger.info("=" * 80)
-        logger.info("✅ PRODUCTION-GRADE Voice Live API Ready")
-        logger.info(f"   Voice: {azure_voice_name} (Azure TTS)")
-        logger.info(f"   Voice Config: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}, temp={voice_temperature}")
-        logger.info(f"   VAD: {'Semantic' if use_semantic_vad else 'Server'} (threshold={vad_threshold}, silence={vad_silence_duration_ms}ms)")
-        logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.8)}, max_tokens={audio_settings.get('max-response-tokens', 1500)}")
-        logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}, FillerRemoval={remove_fillers}")
+        logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
+        logger.info(f"   Voice: {azure_voice_name} (Azure HD Neural TTS)")
+        logger.info(f"   Voice Config: rate=0.85, pitch=+0%, volume=+15%, style=customerservice, temp=0.85")
+        logger.info(f"   VAD: Semantic (threshold=0.5, silence=600ms, end_utterance_timeout=2000ms)")
+        logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.7)}, max_tokens={audio_settings.get('max-response-tokens', 200)}")
+        logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}")
         logger.info("=" * 80)
 
         return connection
@@ -573,7 +558,7 @@ async def execute_function(function_name: str, arguments: dict) -> dict:
             if not zipcode:
                 return {"error": "Missing zipcode parameter"}
 
-            # Use existing zipcode service
+            # Use existing zipcode service (includes zipcode_spoken for clear pronunciation)
             result = zipcode_service.lookup(zipcode)
 
             if result:
@@ -581,6 +566,7 @@ async def execute_function(function_name: str, arguments: dict) -> dict:
                 return {
                     "found": True,
                     "zipcode": zipcode,
+                    "zipcode_spoken": result.get('zipcode_spoken', zipcode),  # Speech-formatted ZIP
                     "city": result['city'],
                     "state": result['state'],
                     "message": f"{result['city']}, {result['state']}"
@@ -1186,15 +1172,6 @@ async def send_signalwire_audio_to_voicelive(
 ):
     logger.info(f"🎤 Audio forwarding started for {company_name}")
 
-    # Audio chunking configuration from research
-    OPTIMAL_CHUNK_MS = 100  # Research-backed optimal
-    SAMPLE_RATE = 24000
-    samples_per_chunk = int(SAMPLE_RATE * (OPTIMAL_CHUNK_MS / 1000))  # 2400 samples
-    bytes_per_chunk = samples_per_chunk * 2  # 16-bit = 2 bytes per sample
-    audio_buffer = bytearray()  # Buffer for optimal chunking
-
-    logger.info(f"🎯 Audio chunking configured: {OPTIMAL_CHUNK_MS}ms chunks ({bytes_per_chunk} bytes)")
-
     stream_sid: Optional[str] = None
     call_session: Optional[CallSession] = None
 
@@ -1296,17 +1273,30 @@ async def send_signalwire_audio_to_voicelive(
                         )
 
                         # Voice Live SDK passes context via additional_instructions parameter
-                        logger.info(f"📤 Call context:\n{context_text}")
+                        # Enhanced with response guidelines for natural, elderly-optimized conversation
+                        enhanced_context = f"""{context_text}
+
+RESPONSE GUIDELINES (Apply to ALL responses):
+- Use discourse markers naturally: "So," "Well," "Actually," "Alright" to start responses
+- Add ONE strategic filler when looking things up: "Let me see..." or "One moment..."
+- Keep responses to 2-3 sentences maximum - be concise
+- For phone numbers and addresses, say each digit with slight pauses
+- Show warmth through acknowledgment: "I can definitely help with that"
+- Avoid repetitive "thank you" - use variety: "Got it," "Perfect," "Okay," "I have that"
+- Speak slightly slower and clearer for elderly customers
+- Don't confirm every field after collection - save confirmation for the end"""
+
+                        logger.info(f"📤 Enhanced call context with response guidelines")
 
                         # Wait for audio stream to fully establish before greeting
                         await asyncio.sleep(1.5)
 
-                        # Trigger response with context via additional_instructions
+                        # Trigger response with enhanced context via additional_instructions
                         # SDK supports: response.create(response, event_id, additional_instructions)
                         await voicelive_connection.response.create(
-                            additional_instructions=context_text
+                            additional_instructions=enhanced_context
                         )
-                        logger.info("✅ Triggered greeting with call context (Cedar will use his script)")
+                        logger.info("✅ Triggered greeting with enhanced context (elderly-optimized natural responses)")
 
                     elif event_name == "media":
                         if not call_session:
@@ -1320,38 +1310,12 @@ async def send_signalwire_audio_to_voicelive(
                         if SAVE_RECORDINGS:
                             call_session.add_caller_audio(payload)
 
-                        # Decode and add to chunking buffer
+                        # Direct forward - Voice Live API handles optimal chunking
                         try:
-                            audio_bytes = base64.b64decode(payload)
-                            audio_buffer.extend(audio_bytes)
-
-                            # Process in optimal 100ms chunks
-                            chunks_processed = 0
-                            while len(audio_buffer) >= bytes_per_chunk:
-                                # Extract optimal chunk
-                                chunk = bytes(audio_buffer[:bytes_per_chunk])
-                                audio_buffer = audio_buffer[bytes_per_chunk:]
-
-                                # Re-encode chunk for Voice Live API
-                                chunk_b64 = base64.b64encode(chunk).decode('utf-8')
-
-                                # Forward optimal chunk
-                                await voicelive_connection.input_audio_buffer.append(audio=chunk_b64)
-                                chunks_processed += 1
-
-                            if chunks_processed > 0:
-                                logger.debug(f"🔊 Processed {chunks_processed} x {OPTIMAL_CHUNK_MS}ms chunks")
-
-                            # Log buffered data waiting for next chunk
-                            if len(audio_buffer) > 0:
-                                buffer_ms = (len(audio_buffer) / 2 / SAMPLE_RATE) * 1000
-                                logger.debug(f"📦 Buffering {len(audio_buffer)} bytes ({buffer_ms:.1f}ms) for next chunk")
-
-                        except Exception as e:
-                            logger.error(f"Audio chunking error: {e}")
-                            # Fallback to direct forward without chunking
                             await voicelive_connection.input_audio_buffer.append(audio=payload)
-                            logger.debug("🔨 Fallback: forwarded audio without chunking")
+                            logger.debug("🔊 Forwarded audio")
+                        except Exception as e:
+                            logger.error(f"Audio forward error: {e}")
 
                     elif event_name == "stop":
                         logger.info(f"⏹️ Call ended for {company_name}")
