@@ -436,20 +436,6 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         # Define tools using FunctionTool SDK class
         tools = [
             FunctionTool(
-                name="verify_surname",
-                description="Verify the spelling of a customer's surname using phonetic matching database. Use this when the customer provides their last name.",
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "surname": {
-                            "type": "string",
-                            "description": "The surname to verify (as heard from customer speech)"
-                        }
-                    },
-                    "required": ["surname"]
-                }
-            ),
-            FunctionTool(
                 name="lookup_zipcode",
                 description="Get the city and state for a given ZIP code. Use this when the customer provides their ZIP code.",
                 parameters={
@@ -566,51 +552,7 @@ async def execute_function(function_name: str, arguments: dict) -> dict:
     logger.info(f"🔧 Executing function: {function_name} with args: {arguments}")
 
     try:
-        if function_name == "verify_surname":
-            surname = arguments.get("surname", "")
-            if not surname:
-                return {"error": "Missing surname parameter"}
-
-            # Use existing surname verifier
-            candidates = find_surname_candidates(surname)
-            prompt_data = generate_llm_prompt(surname, candidates)
-
-            logger.info(f"   Surname verification: {len(candidates)} candidates found")
-            logger.info(f"   Prompt type: {prompt_data['type']}")
-
-            # Return structured result for the AI
-            if prompt_data['type'] == 'perfect_match' and candidates:
-                spelling = '-'.join(candidates[0][0])
-                return {
-                    "status": "confirmed",
-                    "surname": candidates[0][0],
-                    "spelling": spelling,
-                    "confidence": "high",
-                    "message": f"Confirmed spelling: {spelling}"
-                }
-            elif prompt_data['type'] == 'phonetic_match' and candidates:
-                spelling = '-'.join(candidates[0][0])
-                return {
-                    "status": "suggestion",
-                    "surname": candidates[0][0],
-                    "spelling": spelling,
-                    "confidence": "medium",
-                    "message": f"Suggested spelling: {spelling}. Please confirm with customer."
-                }
-            elif prompt_data['type'] == 'multiple_matches':
-                options = [{'surname': c[0], 'spelling': '-'.join(c[0])} for c in candidates[:3]]
-                return {
-                    "status": "multiple",
-                    "options": options,
-                    "message": f"Multiple possible spellings. Ask customer to clarify."
-                }
-            else:
-                return {
-                    "status": "not_found",
-                    "message": "Surname not found in database. Please ask customer to spell it out."
-                }
-
-        elif function_name == "lookup_zipcode":
+        if function_name == "lookup_zipcode":
             zipcode = arguments.get("zipcode", "")
             if not zipcode:
                 return {"error": "Missing zipcode parameter"}
@@ -695,7 +637,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "23.1 - Debug WebSocket bypass failure",
+        "version": "24.0 - Removed surname verification",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -706,7 +648,7 @@ def root():
         },
         "audio_format": "PCM16 24kHz passthrough",
         "features": [
-            "Function calling (surname verification, ZIP lookup, transfer window)",
+            "Function calling (ZIP lookup, transfer window)",
             "Grace period to prevent race conditions (500ms transcript wait)",
             "Per-company Azure TTS voice selection (600+ voices)",
             "Friendly names OR direct Azure voice names",
@@ -719,7 +661,6 @@ def root():
             "Call recordings & transcripts" if SAVE_RECORDINGS or SAVE_TRANSCRIPTS else None
         ],
         "functions": [
-            {"name": "verify_surname", "description": "Verify customer surname spelling via phonetic database"},
             {"name": "lookup_zipcode", "description": "Get city and state from ZIP code"},
             {"name": "transfer_window_check", "description": "Check if live agent transfers are available (Mon-Sat 8AM-2AM Eastern)"}
         ]
@@ -1088,13 +1029,7 @@ async def handle_voicelive_event(
                 logger.warning("Bypass failed. Triggering new response for LLM recovery.")
                 try:
                     # Build context-appropriate recovery message
-                    if function_name == "verify_surname":
-                        recovery_prompt = (
-                            f"IMPORTANT: Your tool call for '{function_name}' just failed. "
-                            "Do not mention the tool or the error. "
-                            "Simply ask the caller: 'Could you please spell your last name for me?'"
-                        )
-                    elif function_name == "lookup_zipcode":
+                    if function_name == "lookup_zipcode":
                         recovery_prompt = (
                             f"IMPORTANT: Your tool call for '{function_name}' just failed. "
                             "Do not mention the tool or the error. "
@@ -1176,13 +1111,7 @@ async def handle_voicelive_event(
                             logger.warning("Bypass failed (Method 2). Triggering new response for LLM recovery.")
                             try:
                                 # Build context-appropriate recovery message
-                                if function_name == "verify_surname":
-                                    recovery_prompt = (
-                                        f"IMPORTANT: Your tool call for '{function_name}' just failed. "
-                                        "Do not mention the tool or the error. "
-                                        "Simply ask the caller: 'Could you please spell your last name for me?'"
-                                    )
-                                elif function_name == "lookup_zipcode":
+                                if function_name == "lookup_zipcode":
                                     recovery_prompt = (
                                         f"IMPORTANT: Your tool call for '{function_name}' just failed. "
                                         "Do not mention the tool or the error. "
