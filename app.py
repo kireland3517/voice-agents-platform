@@ -997,18 +997,39 @@ async def handle_voicelive_event(
                 }
 
                 # Send directly via the WebSocket connection
-                if hasattr(voicelive_connection, '_ws') or hasattr(voicelive_connection, 'ws'):
-                    ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
-                    if ws:
-                        await ws.send(json.dumps(raw_message))
-                        logger.info("✅ Function result sent via raw WebSocket")
-                    else:
-                        logger.error("❌ Cannot access WebSocket connection")
-                else:
-                    logger.error("❌ No WebSocket attribute found")
+                ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
+
+                if not ws:
+                    # NEW: Explicitly raise an error if the SDK attribute is missing
+                    raise AttributeError("Cannot access internal '_ws' or 'ws' attribute on connection object.")
+
+                await ws.send(json.dumps(raw_message))
+                logger.info("✅ Function result sent via raw WebSocket")
+
             except Exception as e:
-                logger.error(f"❌ Failed to send raw message: {e}")
-                logger.error(traceback.format_exc())
+                # CRITICAL FIX: If sending fails, inject an error message
+                # that the LLM can understand and act on.
+                logger.error(f"❌ FAILED TO SEND FUNCTION RESULT (SDK Bypass Failure): {e}")
+
+                # Send a *new* error message back to the LLM via the same bypass
+                try:
+                    error_output = {"error": "Tool submission failed. Do not retry. Ask the user to provide the information manually."}
+                    error_message = {
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "function_call_output",
+                            "call_id": call_id,
+                            "output": json.dumps(error_output)
+                        }
+                    }
+                    if ws:
+                        await ws.send(json.dumps(error_message))
+                        logger.warning("✅ Injected tool failure message to LLM for graceful recovery.")
+                    else:
+                        logger.error("❌ Cannot even send error message; WebSocket attribute is null.")
+                except Exception as final_e:
+                    logger.critical(f"❌ Total bypass failure. Could not send original result OR error result: {final_e}")
+                    logger.error(traceback.format_exc())
 
     # Method 2: Check raw event data for function calls
     elif hasattr(event, '_raw') or hasattr(event, 'data'):
@@ -1043,17 +1064,39 @@ async def handle_voicelive_event(
                             }
 
                             # Send directly via the WebSocket connection
-                            if hasattr(voicelive_connection, '_ws') or hasattr(voicelive_connection, 'ws'):
-                                ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
-                                if ws:
-                                    await ws.send(json.dumps(raw_message))
-                                    logger.info("✅ Function result sent via raw WebSocket (Method 2)")
-                                else:
-                                    logger.error("❌ Cannot access WebSocket connection")
-                            else:
-                                logger.error("❌ No WebSocket attribute found")
+                            ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
+
+                            if not ws:
+                                # NEW: Explicitly raise an error if the SDK attribute is missing
+                                raise AttributeError("Cannot access internal '_ws' or 'ws' attribute on connection object.")
+
+                            await ws.send(json.dumps(raw_message))
+                            logger.info("✅ Function result sent via raw WebSocket (Method 2)")
+
                         except Exception as e:
-                            logger.error(f"❌ Failed to send raw message (Method 2): {e}")
+                            # CRITICAL FIX: If sending fails, inject an error message
+                            # that the LLM can understand and act on.
+                            logger.error(f"❌ FAILED TO SEND FUNCTION RESULT (SDK Bypass Failure - Method 2): {e}")
+
+                            # Send a *new* error message back to the LLM via the same bypass
+                            try:
+                                error_output = {"error": "Tool submission failed. Do not retry. Ask the user to provide the information manually."}
+                                error_message = {
+                                    "type": "conversation.item.create",
+                                    "item": {
+                                        "type": "function_call_output",
+                                        "call_id": call_id,
+                                        "output": json.dumps(error_output)
+                                    }
+                                }
+                                if ws:
+                                    await ws.send(json.dumps(error_message))
+                                    logger.warning("✅ Injected tool failure message to LLM for graceful recovery (Method 2).")
+                                else:
+                                    logger.error("❌ Cannot even send error message; WebSocket attribute is null.")
+                            except Exception as final_e:
+                                logger.critical(f"❌ Total bypass failure (Method 2). Could not send original result OR error result: {final_e}")
+                                logger.error(traceback.format_exc())
             except:
                 pass  # Not a function call event
 
