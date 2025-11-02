@@ -639,7 +639,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "20.0 - FIX: Bypass SDK - send function outputs via raw WebSocket",
+        "version": "20.1 - Graceful error recovery with context-aware messaging",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
