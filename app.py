@@ -462,6 +462,15 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
                     },
                     "required": ["zipcode"]
                 }
+            ),
+            FunctionTool(
+                name="transfer_window_check",
+                description="Check if live agent transfers are currently available. Transfer window: Monday-Saturday, 8:00 AM - 2:00 AM Eastern Time. Use this to determine if you should transfer the customer or schedule a callback.",
+                parameters={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
             )
         ]
         logger.info(f"✅ Configured {len(tools)} function calling tools: {[t.name for t in tools]}")
@@ -626,6 +635,48 @@ async def execute_function(function_name: str, arguments: dict) -> dict:
                     "message": "ZIP code not found. Please ask customer to verify."
                 }
 
+        elif function_name == "transfer_window_check":
+            # Check if live agent transfers are available
+            # Transfer window: Monday-Saturday, 8:00 AM - 2:00 AM Eastern Time
+
+            # Get current time in Eastern timezone
+            eastern_tz = pytz.timezone('US/Eastern')
+            now_eastern = datetime.now(UTC).astimezone(eastern_tz)
+
+            current_day = now_eastern.weekday()  # 0=Monday, 6=Sunday
+            current_hour = now_eastern.hour
+            current_minute = now_eastern.minute
+            current_time_minutes = current_hour * 60 + current_minute
+
+            # Transfer window: Monday (0) - Saturday (5), 8:00 AM - 2:00 AM (next day)
+            # 8:00 AM = 480 minutes, 2:00 AM = 120 minutes
+            transfer_start = 8 * 60  # 8:00 AM = 480 minutes
+            transfer_end = 2 * 60    # 2:00 AM = 120 minutes
+
+            # Since window spans midnight (8am-2am next day), we need to check two scenarios
+            transfers_available = False
+
+            # Scenario 1: Current time is after 8:00 AM on a valid day (Mon-Sat)
+            if current_day in [0, 1, 2, 3, 4, 5] and current_time_minutes >= transfer_start:
+                transfers_available = True
+
+            # Scenario 2: Current time is before 2:00 AM and YESTERDAY was a valid day
+            # (e.g., it's 1:00 AM Sunday, which is still Saturday's transfer window)
+            elif current_time_minutes < transfer_end:
+                previous_day = (current_day - 1) % 7
+                if previous_day in [0, 1, 2, 3, 4, 5]:
+                    transfers_available = True
+
+            logger.info(f"   Transfer window check: {now_eastern.strftime('%A %I:%M %p %Z')} - Available: {transfers_available}")
+
+            return {
+                "available": transfers_available,
+                "current_time": now_eastern.strftime('%I:%M %p %Z'),
+                "current_day": now_eastern.strftime('%A'),
+                "transfer_window": "Monday-Saturday, 8:00 AM - 2:00 AM Eastern",
+                "message": "Transfers available now" if transfers_available else "Transfers not available - will schedule callback"
+            }
+
         else:
             return {"error": f"Unknown function: {function_name}"}
 
@@ -644,7 +695,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "22.0 - SDK recovery + natural speech + optimized latency",
+        "version": "23.0 - Race condition fix + transfer window check",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -655,7 +706,8 @@ def root():
         },
         "audio_format": "PCM16 24kHz passthrough",
         "features": [
-            "Function calling (surname verification, ZIP lookup)",
+            "Function calling (surname verification, ZIP lookup, transfer window)",
+            "Grace period to prevent race conditions (500ms transcript wait)",
             "Per-company Azure TTS voice selection (600+ voices)",
             "Friendly names OR direct Azure voice names",
             "Semantic VAD with filler removal",
@@ -668,7 +720,8 @@ def root():
         ],
         "functions": [
             {"name": "verify_surname", "description": "Verify customer surname spelling via phonetic database"},
-            {"name": "lookup_zipcode", "description": "Get city and state from ZIP code"}
+            {"name": "lookup_zipcode", "description": "Get city and state from ZIP code"},
+            {"name": "transfer_window_check", "description": "Check if live agent transfers are available (Mon-Sat 8AM-2AM Eastern)"}
         ]
     }
 
@@ -905,6 +958,13 @@ async def handle_voicelive_event(
 
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
         logger.info("🎤 Caller stopped speaking")
+
+        # GRACE PERIOD: Wait 500ms for transcript to arrive before AI responds
+        # This prevents race condition where AI responds before hearing the transcript
+        # Evidence from production: transcript takes ~360ms to arrive after VAD stops
+        logger.info("⏳ Waiting 500ms grace period for transcript...")
+        await asyncio.sleep(0.5)
+        logger.info("✅ Grace period complete, transcript should be available")
 
     elif event.type == ServerEventType.RESPONSE_CREATED:
         logger.info(f"🤖 {company_name} AI responding")
