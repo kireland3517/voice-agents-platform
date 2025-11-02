@@ -387,15 +387,12 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         turn_detection_config = AzureSemanticVad(
             threshold=0.5,  # Higher threshold = less sensitive, fewer false triggers
             prefix_padding_ms=300,  # More context
-            silence_duration_ms=600,  # Longer for elderly customers
-            remove_filler_words=False,  # KEEP customer's natural speech
-            end_of_utterance_detection={
-                "model": "semantic_detection_v1",
-                "threshold": 0.01,  # Very lenient to avoid false interruptions
-                "timeout": 2000  # More patience for elderly customers
-            }
+            silence_duration_ms=600,  # Longer for elderly customers (increased from default)
+            remove_filler_words=False  # KEEP customer's natural speech
+            # NOTE: end_of_utterance_detection is NOT supported by AzureSemanticVad
+            # The silence_duration_ms parameter provides patience for elderly customers
         )
-        logger.info(f"✅ Semantic VAD ENABLED (threshold=0.5, silence=600ms, filler_removal=False, end_utterance_timeout=2000ms)")
+        logger.info(f"✅ Semantic VAD ENABLED (threshold=0.5, silence=600ms, filler_removal=False)")
 
         # Configure noise suppression
         noise_reduction = None
@@ -487,7 +484,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
         logger.info(f"   Voice: {azure_voice_name} (Azure HD Neural TTS)")
         logger.info(f"   Voice Config: rate=0.85, pitch=+0%, volume=+15%, style=customerservice")
-        logger.info(f"   VAD: Semantic (threshold=0.5, silence=600ms, end_utterance_timeout=2000ms)")
+        logger.info(f"   VAD: Semantic (threshold=0.5, silence=600ms)")
         logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.7)}, max_tokens={audio_settings.get('max-response-tokens', 200)}")
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}")
         logger.info("=" * 80)
