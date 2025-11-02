@@ -117,10 +117,10 @@ AZURE_VOICE_MAP = {
     'echo': 'en-US-GuyNeural',               # Professional male voice
     'ash': 'en-US-EmmaNeural',               # Clear, articulate female voice
     'ballad': 'en-US-DavisNeural',           # Conversational male voice
-    'coral': 'en-US-AvaNeural',              # Conversational female voice
+    'coral': 'en-US-Ava:DragonHDLatestNeural',  # HD quality warm, professional female voice with temperature support
     'sage': 'en-US-BrianNeural',             # Clear, professional male voice
     'verse': 'en-US-AriaNeural',             # Friendly, expressive female voice
-    'cedar': 'en-US-FableTurboMultilingualNeural',  # Low-latency conversational male
+    'cedar': 'en-US-Andrew:DragonHDLatestNeural',  # HD quality warm, natural male voice with temperature support
 
     # Additional popular voices for quick access
     'jenny-multilingual': 'en-US-JennyMultilingualNeural',
@@ -358,7 +358,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         use_noise_suppression = audio_settings.get('enable-noise-suppression', True)
         use_echo_cancellation = audio_settings.get('enable-echo-cancellation', True)
         use_transcription = audio_settings.get('enable-audio-transcription', True)
-        remove_fillers = audio_settings.get('remove-filler-words', True)
+        remove_fillers = audio_settings.get('remove-filler-words', False)  # Default to False - respect natural speech
 
         # Configure Azure TTS voice based on company configuration
         # Support both friendly names (cedar, alloy) and direct Azure voice names
@@ -375,10 +375,25 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             azure_voice_name = "en-US-FableTurboMultilingualNeural"
             logger.warning(f"⚠️ Voice '{voice_name}' not recognized, using default: {azure_voice_name}")
 
+        # Get voice customization settings from config
+        voice_rate = audio_settings.get('voice-rate', '0.95')  # Slightly slower for clarity (0.5-1.5)
+        voice_pitch = audio_settings.get('voice-pitch', '+0%')  # Neutral pitch (-50% to +50%, needs + prefix)
+        voice_volume = audio_settings.get('voice-volume', 'default')  # soft/default/loud
+        voice_style = audio_settings.get('voice-style', 'friendly')  # friendly/cheerful/professional
+        voice_temperature = float(audio_settings.get('voice-temperature', 0.7))  # 0.0-1.0 for HD voices (more natural variation)
+
+        # Configure Azure TTS voice with JSON-based properties (not inline SSML)
         voice_config = AzureStandardVoice(
             name=azure_voice_name,
-            type="azure-standard"
+            type="azure-standard",
+            rate=voice_rate,
+            pitch=voice_pitch,
+            volume=voice_volume,
+            style=voice_style,
+            temperature=voice_temperature  # HD voices only
         )
+
+        logger.info(f"   Voice properties: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}, temp={voice_temperature}")
 
         # Configure VAD (semantic or standard)
         if use_semantic_vad:
@@ -415,13 +430,18 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         transcription = None
         if use_transcription:
             # Create transcription options with only supported parameters
-            # Note: temperature and phrase_list are NOT supported by Voice Live SDK
+            # Note: temperature, phrase_list, and prompt are NOT supported by Voice Live SDK
             transcription = AudioInputTranscriptionOptions(
                 model="whisper-1",
                 language="en"
             )
 
             logger.info("✅ Whisper Transcription ENABLED")
+
+            # Add a warning if the config key still exists
+            transcription_prompt_setting = audio_settings.get('transcription-prompt', None)
+            if transcription_prompt_setting:
+                logger.warning(f"⚠️ 'transcription-prompt' is set in config, but this SDK version does not support it. Ignoring setting.")
 
         # ──────────────────────────────────────────────────────────────────────
         # FUNCTION CALLING CONFIGURATION
@@ -430,20 +450,6 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
 
         # Define tools using FunctionTool SDK class
         tools = [
-            FunctionTool(
-                name="verify_surname",
-                description="Verify the spelling of a customer's surname using phonetic matching database. Use this when the customer provides their last name.",
-                parameters={
-                    "type": "object",
-                    "properties": {
-                        "surname": {
-                            "type": "string",
-                            "description": "The surname to verify (as heard from customer speech)"
-                        }
-                    },
-                    "required": ["surname"]
-                }
-            ),
             FunctionTool(
                 name="lookup_zipcode",
                 description="Get the city and state for a given ZIP code. Use this when the customer provides their ZIP code.",
@@ -456,6 +462,15 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
                         }
                     },
                     "required": ["zipcode"]
+                }
+            ),
+            FunctionTool(
+                name="transfer_window_check",
+                description="Check if live agent transfers are currently available. Transfer window: Monday-Saturday, 8:00 AM - 2:00 AM Eastern Time. Use this to determine if you should transfer the customer or schedule a callback.",
+                parameters={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
                 }
             )
         ]
@@ -486,6 +501,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info("=" * 80)
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready")
         logger.info(f"   Voice: {azure_voice_name} (Azure TTS)")
+        logger.info(f"   Voice Config: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}, temp={voice_temperature}")
         logger.info(f"   VAD: {'Semantic' if use_semantic_vad else 'Server'} (threshold={vad_threshold}, silence={vad_silence_duration_ms}ms)")
         logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.8)}, max_tokens={audio_settings.get('max-response-tokens', 1500)}")
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}, FillerRemoval={remove_fillers}")
@@ -552,51 +568,7 @@ async def execute_function(function_name: str, arguments: dict) -> dict:
     logger.info(f"🔧 Executing function: {function_name} with args: {arguments}")
 
     try:
-        if function_name == "verify_surname":
-            surname = arguments.get("surname", "")
-            if not surname:
-                return {"error": "Missing surname parameter"}
-
-            # Use existing surname verifier
-            candidates = find_surname_candidates(surname)
-            prompt_data = generate_llm_prompt(surname, candidates)
-
-            logger.info(f"   Surname verification: {len(candidates)} candidates found")
-            logger.info(f"   Prompt type: {prompt_data['type']}")
-
-            # Return structured result for the AI
-            if prompt_data['type'] == 'perfect_match' and candidates:
-                spelling = '-'.join(candidates[0][0])
-                return {
-                    "status": "confirmed",
-                    "surname": candidates[0][0],
-                    "spelling": spelling,
-                    "confidence": "high",
-                    "message": f"Confirmed spelling: {spelling}"
-                }
-            elif prompt_data['type'] == 'phonetic_match' and candidates:
-                spelling = '-'.join(candidates[0][0])
-                return {
-                    "status": "suggestion",
-                    "surname": candidates[0][0],
-                    "spelling": spelling,
-                    "confidence": "medium",
-                    "message": f"Suggested spelling: {spelling}. Please confirm with customer."
-                }
-            elif prompt_data['type'] == 'multiple_matches':
-                options = [{'surname': c[0], 'spelling': '-'.join(c[0])} for c in candidates[:3]]
-                return {
-                    "status": "multiple",
-                    "options": options,
-                    "message": f"Multiple possible spellings. Ask customer to clarify."
-                }
-            else:
-                return {
-                    "status": "not_found",
-                    "message": "Surname not found in database. Please ask customer to spell it out."
-                }
-
-        elif function_name == "lookup_zipcode":
+        if function_name == "lookup_zipcode":
             zipcode = arguments.get("zipcode", "")
             if not zipcode:
                 return {"error": "Missing zipcode parameter"}
@@ -621,6 +593,48 @@ async def execute_function(function_name: str, arguments: dict) -> dict:
                     "message": "ZIP code not found. Please ask customer to verify."
                 }
 
+        elif function_name == "transfer_window_check":
+            # Check if live agent transfers are available
+            # Transfer window: Monday-Saturday, 8:00 AM - 2:00 AM Eastern Time
+
+            # Get current time in Eastern timezone
+            eastern_tz = pytz.timezone('US/Eastern')
+            now_eastern = datetime.now(UTC).astimezone(eastern_tz)
+
+            current_day = now_eastern.weekday()  # 0=Monday, 6=Sunday
+            current_hour = now_eastern.hour
+            current_minute = now_eastern.minute
+            current_time_minutes = current_hour * 60 + current_minute
+
+            # Transfer window: Monday (0) - Saturday (5), 8:00 AM - 2:00 AM (next day)
+            # 8:00 AM = 480 minutes, 2:00 AM = 120 minutes
+            transfer_start = 8 * 60  # 8:00 AM = 480 minutes
+            transfer_end = 2 * 60    # 2:00 AM = 120 minutes
+
+            # Since window spans midnight (8am-2am next day), we need to check two scenarios
+            transfers_available = False
+
+            # Scenario 1: Current time is after 8:00 AM on a valid day (Mon-Sat)
+            if current_day in [0, 1, 2, 3, 4, 5] and current_time_minutes >= transfer_start:
+                transfers_available = True
+
+            # Scenario 2: Current time is before 2:00 AM and YESTERDAY was a valid day
+            # (e.g., it's 1:00 AM Sunday, which is still Saturday's transfer window)
+            elif current_time_minutes < transfer_end:
+                previous_day = (current_day - 1) % 7
+                if previous_day in [0, 1, 2, 3, 4, 5]:
+                    transfers_available = True
+
+            logger.info(f"   Transfer window check: {now_eastern.strftime('%A %I:%M %p %Z')} - Available: {transfers_available}")
+
+            return {
+                "available": transfers_available,
+                "current_time": now_eastern.strftime('%I:%M %p %Z'),
+                "current_day": now_eastern.strftime('%A'),
+                "transfer_window": "Monday-Saturday, 8:00 AM - 2:00 AM Eastern",
+                "message": "Transfers available now" if transfers_available else "Transfers not available - will schedule callback"
+            }
+
         else:
             return {"error": f"Unknown function: {function_name}"}
 
@@ -639,7 +653,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "20.0 - FIX: Bypass SDK - send function outputs via raw WebSocket",
+        "version": "28.0 - HD voice + JSON voice properties (no inline SSML)",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -650,7 +664,8 @@ def root():
         },
         "audio_format": "PCM16 24kHz passthrough",
         "features": [
-            "Function calling (surname verification, ZIP lookup)",
+            "Function calling (ZIP lookup, transfer window)",
+            "Grace period to prevent race conditions (500ms transcript wait)",
             "Per-company Azure TTS voice selection (600+ voices)",
             "Friendly names OR direct Azure voice names",
             "Semantic VAD with filler removal",
@@ -662,8 +677,8 @@ def root():
             "Call recordings & transcripts" if SAVE_RECORDINGS or SAVE_TRANSCRIPTS else None
         ],
         "functions": [
-            {"name": "verify_surname", "description": "Verify customer surname spelling via phonetic database"},
-            {"name": "lookup_zipcode", "description": "Get city and state from ZIP code"}
+            {"name": "lookup_zipcode", "description": "Get city and state from ZIP code"},
+            {"name": "transfer_window_check", "description": "Check if live agent transfers are available (Mon-Sat 8AM-2AM Eastern)"}
         ]
     }
 
@@ -901,6 +916,13 @@ async def handle_voicelive_event(
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
         logger.info("🎤 Caller stopped speaking")
 
+        # GRACE PERIOD: Wait 500ms for transcript to arrive before AI responds
+        # This prevents race condition where AI responds before hearing the transcript
+        # Evidence from production: transcript takes ~360ms to arrive after VAD stops
+        logger.info("⏳ Waiting 500ms grace period for transcript...")
+        await asyncio.sleep(0.5)
+        logger.info("✅ Grace period complete, transcript should be available")
+
     elif event.type == ServerEventType.RESPONSE_CREATED:
         logger.info(f"🤖 {company_name} AI responding")
 
@@ -984,7 +1006,7 @@ async def handle_voicelive_event(
             result = await execute_function(function_name, arguments)
             logger.info(f"   Function result: {result}")
 
-            # Send result back to Voice Live
+            bypass_succeeded = False
             try:
                 # Build the raw message format (bypassing SDK)
                 raw_message = {
@@ -996,19 +1018,55 @@ async def handle_voicelive_event(
                     }
                 }
 
+                # Debug: Log all attributes of the connection object
+                connection_attrs = [attr for attr in dir(voicelive_connection) if not attr.startswith('__')]
+                logger.info(f"🔍 Connection object attributes: {connection_attrs}")
+
                 # Send directly via the WebSocket connection
-                if hasattr(voicelive_connection, '_ws') or hasattr(voicelive_connection, 'ws'):
-                    ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
-                    if ws:
-                        await ws.send(json.dumps(raw_message))
-                        logger.info("✅ Function result sent via raw WebSocket")
-                    else:
-                        logger.error("❌ Cannot access WebSocket connection")
-                else:
-                    logger.error("❌ No WebSocket attribute found")
+                ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
+
+                if not ws:
+                    raise AttributeError(f"Cannot access internal '_ws' or 'ws' attribute on connection object. Available attrs: {connection_attrs}")
+
+                await ws.send(json.dumps(raw_message))
+                logger.info("✅ Function result sent via raw WebSocket")
+                bypass_succeeded = True
+
             except Exception as e:
-                logger.error(f"❌ Failed to send raw message: {e}")
+                # The bypass failed. Log it.
+                logger.error(f"❌ FAILED TO SEND FUNCTION RESULT (SDK Bypass Failure): {e}")
                 logger.error(traceback.format_exc())
+                # 'bypass_succeeded' remains False
+
+            # --- NEW ROBUST RECOVERY BLOCK ---
+            # If the bypass failed, we MUST tell the AI to recover
+            # by triggering a new response and injecting context.
+            if not bypass_succeeded:
+                logger.warning("Bypass failed. Triggering new response for LLM recovery.")
+                try:
+                    # Build context-appropriate recovery message
+                    if function_name == "lookup_zipcode":
+                        recovery_prompt = (
+                            f"IMPORTANT: Your tool call for '{function_name}' just failed. "
+                            "Do not mention the tool or the error. "
+                            "Simply ask the caller: 'Could you let me know your city and state?'"
+                        )
+                    else:
+                        recovery_prompt = (
+                            f"IMPORTANT: Your tool call for '{function_name}' just failed. "
+                            "Do not mention the tool or the error. "
+                            "Gracefully ask the user to provide the information manually."
+                        )
+
+                    # Use the SDK's *supported* response.create method
+                    # to force the AI to speak again with new instructions
+                    await voicelive_connection.response.create(
+                        additional_instructions=recovery_prompt
+                    )
+                    logger.info("✅ Triggered SDK response.create() for graceful tool failure recovery.")
+                except Exception as recovery_e:
+                    logger.critical(f"❌ TOTAL FAILURE: Could not send bypass AND could not trigger recovery response: {recovery_e}")
+                    logger.error(traceback.format_exc())
 
     # Method 2: Check raw event data for function calls
     elif hasattr(event, '_raw') or hasattr(event, 'data'):
@@ -1030,7 +1088,7 @@ async def handle_voicelive_event(
                         result = await execute_function(function_name, arguments)
                         logger.info(f"   Function result: {result}")
 
-                        # Send result back via raw WebSocket (Method 2)
+                        bypass_succeeded = False
                         try:
                             # Build the raw message format (bypassing SDK)
                             raw_message = {
@@ -1042,18 +1100,55 @@ async def handle_voicelive_event(
                                 }
                             }
 
+                            # Debug: Log all attributes of the connection object
+                            connection_attrs = [attr for attr in dir(voicelive_connection) if not attr.startswith('__')]
+                            logger.info(f"🔍 Connection object attributes (Method 2): {connection_attrs}")
+
                             # Send directly via the WebSocket connection
-                            if hasattr(voicelive_connection, '_ws') or hasattr(voicelive_connection, 'ws'):
-                                ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
-                                if ws:
-                                    await ws.send(json.dumps(raw_message))
-                                    logger.info("✅ Function result sent via raw WebSocket (Method 2)")
-                                else:
-                                    logger.error("❌ Cannot access WebSocket connection")
-                            else:
-                                logger.error("❌ No WebSocket attribute found")
+                            ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
+
+                            if not ws:
+                                raise AttributeError(f"Cannot access internal '_ws' or 'ws' attribute on connection object. Available attrs: {connection_attrs}")
+
+                            await ws.send(json.dumps(raw_message))
+                            logger.info("✅ Function result sent via raw WebSocket (Method 2)")
+                            bypass_succeeded = True
+
                         except Exception as e:
-                            logger.error(f"❌ Failed to send raw message (Method 2): {e}")
+                            # The bypass failed. Log it.
+                            logger.error(f"❌ FAILED TO SEND FUNCTION RESULT (SDK Bypass Failure - Method 2): {e}")
+                            logger.error(traceback.format_exc())
+                            # 'bypass_succeeded' remains False
+
+                        # --- NEW ROBUST RECOVERY BLOCK ---
+                        # If the bypass failed, we MUST tell the AI to recover
+                        # by triggering a new response and injecting context.
+                        if not bypass_succeeded:
+                            logger.warning("Bypass failed (Method 2). Triggering new response for LLM recovery.")
+                            try:
+                                # Build context-appropriate recovery message
+                                if function_name == "lookup_zipcode":
+                                    recovery_prompt = (
+                                        f"IMPORTANT: Your tool call for '{function_name}' just failed. "
+                                        "Do not mention the tool or the error. "
+                                        "Simply ask the caller: 'Could you let me know your city and state?'"
+                                    )
+                                else:
+                                    recovery_prompt = (
+                                        f"IMPORTANT: Your tool call for '{function_name}' just failed. "
+                                        "Do not mention the tool or the error. "
+                                        "Gracefully ask the user to provide the information manually."
+                                    )
+
+                                # Use the SDK's *supported* response.create method
+                                # to force the AI to speak again with new instructions
+                                await voicelive_connection.response.create(
+                                    additional_instructions=recovery_prompt
+                                )
+                                logger.info("✅ Triggered SDK response.create() for graceful tool failure recovery (Method 2).")
+                            except Exception as recovery_e:
+                                logger.critical(f"❌ TOTAL FAILURE (Method 2): Could not send bypass AND could not trigger recovery response: {recovery_e}")
+                                logger.error(traceback.format_exc())
             except:
                 pass  # Not a function call event
 
