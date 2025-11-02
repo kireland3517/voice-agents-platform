@@ -962,14 +962,12 @@ async def handle_voicelive_event(
         if not audio_bytes:
             return
 
-        # Check if we should forward this audio (prevent audio-only responses)
-        # Audio-only responses contain the literal "<|audio_text|>" token being spoken
-        if not response_tracker.should_forward_audio():
-            # This is an audio-only response (no text deltas received)
-            # Suppress it to prevent "<|audio_text|>" from being spoken
-            response_tracker.suppress_audio()
-            logger.debug("🚫 Suppressing audio-only chunk (no text received)")
-            return
+        # DISABLED: Audio suppression was too aggressive - causing Cedar not to speak
+        # The audio_text token issue should be handled by the instructions instead
+        # if not response_tracker.should_forward_audio():
+        #     response_tracker.suppress_audio()
+        #     logger.debug("🚫 Suppressing audio-only chunk (no text received)")
+        #     return
 
         # Convert bytes to base64 for SignalWire
         audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
