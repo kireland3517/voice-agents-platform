@@ -647,7 +647,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "21.0 - SDK-based recovery + transcription biasing",
+        "version": "22.0 - SDK recovery + transcription biasing + natural speech",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
