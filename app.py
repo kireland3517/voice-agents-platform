@@ -120,7 +120,7 @@ AZURE_VOICE_MAP = {
     'coral': 'en-US-AvaNeural',              # Conversational female voice
     'sage': 'en-US-BrianNeural',             # Clear, professional male voice
     'verse': 'en-US-AriaNeural',             # Friendly, expressive female voice
-    'cedar': 'en-US-FableTurboMultilingualNeural',  # Low-latency conversational male
+    'cedar': 'en-US-Andrew:DragonHDLatestNeural',  # HD quality warm, natural male voice with temperature support
 
     # Additional popular voices for quick access
     'jenny-multilingual': 'en-US-JennyMultilingualNeural',
@@ -375,10 +375,25 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             azure_voice_name = "en-US-FableTurboMultilingualNeural"
             logger.warning(f"⚠️ Voice '{voice_name}' not recognized, using default: {azure_voice_name}")
 
+        # Get voice customization settings from config
+        voice_rate = audio_settings.get('voice-rate', '0.95')  # Slightly slower for clarity (0.5-1.5)
+        voice_pitch = audio_settings.get('voice-pitch', '+0%')  # Neutral pitch (-50% to +50%, needs + prefix)
+        voice_volume = audio_settings.get('voice-volume', 'default')  # soft/default/loud
+        voice_style = audio_settings.get('voice-style', 'friendly')  # friendly/cheerful/professional
+        voice_temperature = float(audio_settings.get('voice-temperature', 0.7))  # 0.0-1.0 for HD voices (more natural variation)
+
+        # Configure Azure TTS voice with JSON-based properties (not inline SSML)
         voice_config = AzureStandardVoice(
             name=azure_voice_name,
-            type="azure-standard"
+            type="azure-standard",
+            rate=voice_rate,
+            pitch=voice_pitch,
+            volume=voice_volume,
+            style=voice_style,
+            temperature=voice_temperature  # HD voices only
         )
+
+        logger.info(f"   Voice properties: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}, temp={voice_temperature}")
 
         # Configure VAD (semantic or standard)
         if use_semantic_vad:
@@ -486,6 +501,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info("=" * 80)
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready")
         logger.info(f"   Voice: {azure_voice_name} (Azure TTS)")
+        logger.info(f"   Voice Config: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}, temp={voice_temperature}")
         logger.info(f"   VAD: {'Semantic' if use_semantic_vad else 'Server'} (threshold={vad_threshold}, silence={vad_silence_duration_ms}ms)")
         logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.8)}, max_tokens={audio_settings.get('max-response-tokens', 1500)}")
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}, FillerRemoval={remove_fillers}")
@@ -637,7 +653,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "27.0 - SSML instructions with Azure Neural TTS",
+        "version": "28.0 - HD voice + JSON voice properties (no inline SSML)",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",

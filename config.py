@@ -51,9 +51,9 @@ class ConfigManager:
             return None
         
         try:
-            # UPDATED: Use cedar_instructions_SSML.md for Senior Life (SSML supported with Azure Neural TTS)
+            # UPDATED: Use cedar_instructions.md (inline SSML not supported by Voice Live API)
             if company_id == "senior-life":
-                blob_name = "cedar_instructions_SSML.md"
+                blob_name = "cedar_instructions.md"
             else:
                 # Fallback pattern for other companies
                 blob_name = f"{company_id}-instructions.txt"
