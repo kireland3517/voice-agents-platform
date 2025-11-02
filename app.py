@@ -695,7 +695,7 @@ def root():
     return {
         "ok": True,
         "service": "Voice Agent Bridge",
-        "version": "23.0 - Race condition fix + transfer window check",
+        "version": "23.1 - Debug WebSocket bypass failure",
         "api": "Azure Voice Live API",
         "model": AZURE_AI_MODEL,
         "voices": "Per-company Azure TTS voices (600+ voices supported)",
@@ -1061,11 +1061,15 @@ async def handle_voicelive_event(
                     }
                 }
 
+                # Debug: Log all attributes of the connection object
+                connection_attrs = [attr for attr in dir(voicelive_connection) if not attr.startswith('__')]
+                logger.info(f"🔍 Connection object attributes: {connection_attrs}")
+
                 # Send directly via the WebSocket connection
                 ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
 
                 if not ws:
-                    raise AttributeError("Cannot access internal '_ws' or 'ws' attribute on connection object.")
+                    raise AttributeError(f"Cannot access internal '_ws' or 'ws' attribute on connection object. Available attrs: {connection_attrs}")
 
                 await ws.send(json.dumps(raw_message))
                 logger.info("✅ Function result sent via raw WebSocket")
@@ -1145,11 +1149,15 @@ async def handle_voicelive_event(
                                 }
                             }
 
+                            # Debug: Log all attributes of the connection object
+                            connection_attrs = [attr for attr in dir(voicelive_connection) if not attr.startswith('__')]
+                            logger.info(f"🔍 Connection object attributes (Method 2): {connection_attrs}")
+
                             # Send directly via the WebSocket connection
                             ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
 
                             if not ws:
-                                raise AttributeError("Cannot access internal '_ws' or 'ws' attribute on connection object.")
+                                raise AttributeError(f"Cannot access internal '_ws' or 'ws' attribute on connection object. Available attrs: {connection_attrs}")
 
                             await ws.send(json.dumps(raw_message))
                             logger.info("✅ Function result sent via raw WebSocket (Method 2)")
