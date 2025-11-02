@@ -188,12 +188,12 @@ class ConfigManager:
             # Transcription Settings - Better accuracy
             if not audio_settings.get('transcription-temperature'):
                 audio_settings['transcription-temperature'] = 0.0  # Deterministic for consistency
-            if not audio_settings.get('custom-transcription-terms'):
-                # Default domain terms for insurance industry
-                audio_settings['custom-transcription-terms'] = [
-                    "Cedar", "Senior Life Insurance", "Medicare", "Medicaid",
-                    "copay", "deductible", "premium", "beneficiary"
-                ]
+            if not audio_settings.get('transcription-prompt'):
+                # Default domain terms for insurance industry (comma-separated string)
+                audio_settings['transcription-prompt'] = (
+                    "Cedar, Senior Life Insurance, Medicare, Medicaid, "
+                    "copay, deductible, premium, beneficiary"
+                )
             
             # Audio Processing Settings - Research-backed chunking
             if not audio_settings.get('chunk-duration-ms'):
