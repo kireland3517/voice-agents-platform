@@ -51,7 +51,7 @@ class ConfigManager:
             return None
         
         try:
-            # UPDATED: Use cedar_instructions.md for Senior Life
+            # UPDATED: Use cedar_instructions.md (inline SSML not supported by Voice Live API)
             if company_id == "senior-life":
                 blob_name = "cedar_instructions.md"
             else:
@@ -182,18 +182,20 @@ class ConfigManager:
             # LLM Settings - Optimized for latency
             if not audio_settings.get('temperature'):
                 audio_settings['temperature'] = 0.8  # Default for conversational
-            if not audio_settings.get('max-response-tokens'):
-                audio_settings['max-response-tokens'] = 1500  # Research: 20% latency improvement from 4096
+
+            # Force the optimal setting for gpt-realtime-mini
+            # The 4096 value in AppConfig is legacy and causes latency
+            audio_settings['max-response-tokens'] = 1500  # Research: 20% latency improvement from 4096
             
             # Transcription Settings - Better accuracy
             if not audio_settings.get('transcription-temperature'):
                 audio_settings['transcription-temperature'] = 0.0  # Deterministic for consistency
-            if not audio_settings.get('custom-transcription-terms'):
-                # Default domain terms for insurance industry
-                audio_settings['custom-transcription-terms'] = [
-                    "Cedar", "Senior Life Insurance", "Medicare", "Medicaid",
-                    "copay", "deductible", "premium", "beneficiary"
-                ]
+            if not audio_settings.get('transcription-prompt'):
+                # Default domain terms for insurance industry (comma-separated string)
+                audio_settings['transcription-prompt'] = (
+                    "Cedar, Senior Life Insurance, Medicare, Medicaid, "
+                    "copay, deductible, premium, beneficiary"
+                )
             
             # Audio Processing Settings - Research-backed chunking
             if not audio_settings.get('chunk-duration-ms'):
@@ -210,8 +212,9 @@ class ConfigManager:
                 audio_settings['enable-echo-cancellation'] = True  # Prevents feedback loops
             if not audio_settings.get('enable-audio-transcription'):
                 audio_settings['enable-audio-transcription'] = True  # Whisper for quality
-            if not audio_settings.get('remove-filler-words'):
-                audio_settings['remove-filler-words'] = True  # Auto-remove "uh", "um"
+            if 'remove-filler-words' not in audio_settings:
+                audio_settings['remove-filler-words'] = False  # DO NOT remove fillers - respect natural speech cadence
+                logger.info("Setting 'remove-filler-words' to FALSE for natural VAD.")
             
             # Connection & Monitoring Settings
             if not audio_settings.get('heartbeat-interval-seconds'):
@@ -273,8 +276,9 @@ class ConfigManager:
             audio_settings['vad-end-utterance-timeout-ms'] = 1000  # Prevents hanging
         if not audio_settings.get('temperature'):
             audio_settings['temperature'] = 0.8
-        if not audio_settings.get('max-response-tokens'):
-            audio_settings['max-response-tokens'] = 1500  # 20% latency improvement
+
+        # Force the optimal setting for gpt-realtime-mini
+        audio_settings['max-response-tokens'] = 1500  # 20% latency improvement
         if not audio_settings.get('transcription-temperature'):
             audio_settings['transcription-temperature'] = 0.0
 
@@ -287,8 +291,8 @@ class ConfigManager:
             audio_settings['enable-echo-cancellation'] = True
         if not audio_settings.get('enable-audio-transcription'):
             audio_settings['enable-audio-transcription'] = True
-        if not audio_settings.get('remove-filler-words'):
-            audio_settings['remove-filler-words'] = True
+        if 'remove-filler-words' not in audio_settings:
+            audio_settings['remove-filler-words'] = False  # DO NOT remove fillers - respect natural speech cadence
 
         return audio_settings
     
