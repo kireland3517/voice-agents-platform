@@ -5,6 +5,7 @@ Loads us-zipcodes.csv and provides lookup functionality
 import os
 import csv
 import logging
+from text_formatting import format_zip_code_for_speech
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,14 @@ class ZipcodeService:
             zipcode: 5-digit ZIP code as string
 
         Returns:
-            dict with 'city' and 'state', or None if not found
+            dict with 'city', 'state', and 'zipcode_spoken' (formatted for speech), or None if not found
         """
         zipcode = str(zipcode).strip().zfill(5)  # Ensure 5 digits with leading zeros
-        return self.zipcode_data.get(zipcode)
+        result = self.zipcode_data.get(zipcode)
+
+        if result:
+            # Add speech-formatted ZIP code to the result
+            result = dict(result)  # Create a copy
+            result['zipcode_spoken'] = format_zip_code_for_speech(zipcode)
+
+        return result
