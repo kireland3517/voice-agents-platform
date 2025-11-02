@@ -210,8 +210,9 @@ class ConfigManager:
                 audio_settings['enable-echo-cancellation'] = True  # Prevents feedback loops
             if not audio_settings.get('enable-audio-transcription'):
                 audio_settings['enable-audio-transcription'] = True  # Whisper for quality
-            if not audio_settings.get('remove-filler-words'):
-                audio_settings['remove-filler-words'] = True  # Auto-remove "uh", "um"
+            if 'remove-filler-words' not in audio_settings:
+                audio_settings['remove-filler-words'] = False  # DO NOT remove fillers - respect natural speech cadence
+                logger.info("Setting 'remove-filler-words' to FALSE for natural VAD.")
             
             # Connection & Monitoring Settings
             if not audio_settings.get('heartbeat-interval-seconds'):
@@ -287,8 +288,8 @@ class ConfigManager:
             audio_settings['enable-echo-cancellation'] = True
         if not audio_settings.get('enable-audio-transcription'):
             audio_settings['enable-audio-transcription'] = True
-        if not audio_settings.get('remove-filler-words'):
-            audio_settings['remove-filler-words'] = True
+        if 'remove-filler-words' not in audio_settings:
+            audio_settings['remove-filler-words'] = False  # DO NOT remove fillers - respect natural speech cadence
 
         return audio_settings
     
