@@ -806,6 +806,39 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
 # ──────────────────────────────────────────────────────────────────────────────
 # VOICE LIVE → SIGNALWIRE EVENT HANDLER
 # ──────────────────────────────────────────────────────────────────────────────
+
+# Response tracking to detect and suppress audio-only responses (prevents <|audio_text|> token)
+class ResponseTracker:
+    """Track whether current response has text to prevent audio-only responses"""
+    def __init__(self):
+        self.current_response_has_text = False
+        self.suppressed_audio_count = 0
+
+    def start_response(self):
+        """Reset for new response"""
+        self.current_response_has_text = False
+        self.suppressed_audio_count = 0
+
+    def mark_text_received(self):
+        """Mark that text was received for current response"""
+        self.current_response_has_text = True
+
+    def should_forward_audio(self) -> bool:
+        """Return True if audio should be forwarded (has accompanying text)"""
+        return self.current_response_has_text
+
+    def suppress_audio(self):
+        """Count a suppressed audio chunk"""
+        self.suppressed_audio_count += 1
+
+    def log_suppression(self):
+        """Log if audio was suppressed"""
+        if not self.current_response_has_text and self.suppressed_audio_count > 0:
+            logger.warning(f"⚠️ Suppressed {self.suppressed_audio_count} audio-only chunks (likely <|audio_text|> token)")
+
+# Global response tracker instance
+response_tracker = ResponseTracker()
+
 async def handle_voicelive_event(
     event,  # Voice Live SDK event object
     signalwire_ws: WebSocket,
@@ -835,7 +868,7 @@ async def handle_voicelive_event(
         if transcript_text:
             logger.info(f"📝 USER TRANSCRIPT: {transcript_text}")
 
-    # Log AI response text
+    # Log AI response text and filter invalid tokens
     if 'text' in event_type_str.lower() and 'delta' in event_type_str.lower():
         response_text = None
         if hasattr(event, 'delta'):
@@ -844,7 +877,16 @@ async def handle_voicelive_event(
             response_text = event.text
 
         if response_text and isinstance(response_text, str):
-            logger.info(f"💬 AI RESPONSE TEXT: {response_text}")
+            # Filter out invalid LLM tokens that should not be spoken
+            INVALID_TOKENS = {"<|audio_text|>", "<|end_of_text|>", "null", ""}
+            if response_text.strip() in INVALID_TOKENS or "<|audio_text|>" in response_text:
+                logger.warning(f"🚫 Suppressed invalid LLM token: '{response_text}'")
+                # Don't log or process this text further
+                # DON'T mark as having text - this is an invalid token
+            else:
+                logger.info(f"💬 AI RESPONSE TEXT: {response_text}")
+                # Mark that valid text was received for this response
+                response_tracker.mark_text_received()
 
     # Log content parts (might contain text)
     if 'content_part' in event_type_str.lower() or 'output_item' in event_type_str.lower():
@@ -911,6 +953,8 @@ async def handle_voicelive_event(
 
     elif event.type == ServerEventType.RESPONSE_CREATED:
         logger.info(f"🤖 {company_name} AI responding")
+        # Reset response tracker for new response
+        response_tracker.start_response()
 
     elif event.type == ServerEventType.RESPONSE_AUDIO_DELTA:
         if signalwire_ws.application_state != WebSocketState.CONNECTED:
@@ -919,6 +963,15 @@ async def handle_voicelive_event(
         # Voice Live SDK returns audio as bytes in event.delta
         audio_bytes = event.delta
         if not audio_bytes:
+            return
+
+        # Check if we should forward this audio (prevent audio-only responses)
+        # Audio-only responses contain the literal "<|audio_text|>" token being spoken
+        if not response_tracker.should_forward_audio():
+            # This is an audio-only response (no text deltas received)
+            # Suppress it to prevent "<|audio_text|>" from being spoken
+            response_tracker.suppress_audio()
+            logger.debug("🚫 Suppressing audio-only chunk (no text received)")
             return
 
         # Convert bytes to base64 for SignalWire
@@ -941,9 +994,13 @@ async def handle_voicelive_event(
 
     elif event.type == ServerEventType.RESPONSE_AUDIO_DONE:
         logger.info(f"🤖 {company_name} finished speaking")
+        # Log if we suppressed audio-only chunks
+        response_tracker.log_suppression()
 
     elif event.type == ServerEventType.RESPONSE_DONE:
         logger.info("✅ Response complete")
+        # Log if we suppressed audio-only chunks
+        response_tracker.log_suppression()
 
     elif event.type == ServerEventType.ERROR:
         error_msg = getattr(event, 'error', {}).get('message', 'Unknown error') if hasattr(event, 'error') else 'Unknown error'
@@ -992,43 +1049,66 @@ async def handle_voicelive_event(
             result = await execute_function(function_name, arguments)
             logger.info(f"   Function result: {result}")
 
-            bypass_succeeded = False
+            # Use the documented SDK API instead of internal WebSocket bypass
             try:
-                # Build the raw message format (bypassing SDK)
-                raw_message = {
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "function_call_output",
-                        "call_id": call_id,
-                        "output": json.dumps(result)
-                    }
-                }
+                # Method 1: Try using conversation.item.create (if available)
+                logger.info("📤 Sending function result using documented SDK API...")
 
-                # Debug: Log all attributes of the connection object
-                connection_attrs = [attr for attr in dir(voicelive_connection) if not attr.startswith('__')]
-                logger.info(f"🔍 Connection object attributes: {connection_attrs}")
+                # The result must be a JSON string
+                result_json = json.dumps(result)
 
-                # Send directly via the WebSocket connection
-                ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
+                # Check if connection has conversation.item.create method
+                if hasattr(voicelive_connection, 'conversation'):
+                    conversation = voicelive_connection.conversation
 
-                if not ws:
-                    raise AttributeError(f"Cannot access internal '_ws' or 'ws' attribute on connection object. Available attrs: {connection_attrs}")
+                    # Create a function call output item
+                    if hasattr(conversation, 'item'):
+                        await conversation.item.create(
+                            item={
+                                "type": "function_call_output",
+                                "call_id": call_id,
+                                "output": result_json
+                            }
+                        )
+                        logger.info("✅ Function result sent via conversation.item.create()")
+                    else:
+                        raise AttributeError("conversation.item not available")
 
-                await ws.send(json.dumps(raw_message))
-                logger.info("✅ Function result sent via raw WebSocket")
-                bypass_succeeded = True
+                    # Trigger the next response so AI can speak the result
+                    if hasattr(voicelive_connection, 'response'):
+                        await voicelive_connection.response.create()
+                        logger.info("✅ Triggered response.create() to continue conversation")
+
+                elif hasattr(voicelive_connection, 'response'):
+                    # Method 2: Fallback - inject result via additional_instructions
+                    logger.warning("⚠️ conversation.item not available, using fallback method")
+
+                    # Build context message with the function result
+                    if function_name == "lookup_zipcode":
+                        city = result.get('city', 'Unknown')
+                        state = result.get('state', 'Unknown')
+                        zipcode_spoken = result.get('zipcode_spoken', result.get('zipcode', ''))
+
+                        context_prompt = (
+                            f"SYSTEM: ZIP code lookup successful. "
+                            f"ZIP: {zipcode_spoken} is in {city}, {state}. "
+                            f"Confirm this with the caller naturally."
+                        )
+                    else:
+                        context_prompt = f"SYSTEM: Function '{function_name}' returned: {result_json}"
+
+                    await voicelive_connection.response.create(
+                        additional_instructions=context_prompt
+                    )
+                    logger.info("✅ Function result injected via additional_instructions fallback")
+                else:
+                    raise AttributeError("Neither conversation nor response objects available on connection")
 
             except Exception as e:
-                # The bypass failed. Log it.
-                logger.error(f"❌ FAILED TO SEND FUNCTION RESULT (SDK Bypass Failure): {e}")
+                # If the SDK method fails, use recovery prompt
+                logger.error(f"❌ FAILED TO SEND FUNCTION RESULT: {e}")
                 logger.error(traceback.format_exc())
-                # 'bypass_succeeded' remains False
 
-            # --- NEW ROBUST RECOVERY BLOCK ---
-            # If the bypass failed, we MUST tell the AI to recover
-            # by triggering a new response and injecting context.
-            if not bypass_succeeded:
-                logger.warning("Bypass failed. Triggering new response for LLM recovery.")
                 try:
                     # Build context-appropriate recovery message
                     if function_name == "lookup_zipcode":
@@ -1046,12 +1126,13 @@ async def handle_voicelive_event(
 
                     # Use the SDK's *supported* response.create method
                     # to force the AI to speak again with new instructions
-                    await voicelive_connection.response.create(
-                        additional_instructions=recovery_prompt
-                    )
-                    logger.info("✅ Triggered SDK response.create() for graceful tool failure recovery.")
+                    if hasattr(voicelive_connection, 'response'):
+                        await voicelive_connection.response.create(
+                            additional_instructions=recovery_prompt
+                        )
+                        logger.info("✅ Triggered SDK response.create() for graceful tool failure recovery.")
                 except Exception as recovery_e:
-                    logger.critical(f"❌ TOTAL FAILURE: Could not send bypass AND could not trigger recovery response: {recovery_e}")
+                    logger.critical(f"❌ TOTAL FAILURE: Could not send function result AND could not trigger recovery response: {recovery_e}")
                     logger.error(traceback.format_exc())
 
     # Method 2: Check raw event data for function calls
@@ -1074,43 +1155,66 @@ async def handle_voicelive_event(
                         result = await execute_function(function_name, arguments)
                         logger.info(f"   Function result: {result}")
 
-                        bypass_succeeded = False
+                        # Use the documented SDK API instead of internal WebSocket bypass
                         try:
-                            # Build the raw message format (bypassing SDK)
-                            raw_message = {
-                                "type": "conversation.item.create",
-                                "item": {
-                                    "type": "function_call_output",
-                                    "call_id": call_id,
-                                    "output": json.dumps(result)
-                                }
-                            }
+                            # Method 1: Try using conversation.item.create (if available)
+                            logger.info("📤 Sending function result using documented SDK API (Method 2)...")
 
-                            # Debug: Log all attributes of the connection object
-                            connection_attrs = [attr for attr in dir(voicelive_connection) if not attr.startswith('__')]
-                            logger.info(f"🔍 Connection object attributes (Method 2): {connection_attrs}")
+                            # The result must be a JSON string
+                            result_json = json.dumps(result)
 
-                            # Send directly via the WebSocket connection
-                            ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
+                            # Check if connection has conversation.item.create method
+                            if hasattr(voicelive_connection, 'conversation'):
+                                conversation = voicelive_connection.conversation
 
-                            if not ws:
-                                raise AttributeError(f"Cannot access internal '_ws' or 'ws' attribute on connection object. Available attrs: {connection_attrs}")
+                                # Create a function call output item
+                                if hasattr(conversation, 'item'):
+                                    await conversation.item.create(
+                                        item={
+                                            "type": "function_call_output",
+                                            "call_id": call_id,
+                                            "output": result_json
+                                        }
+                                    )
+                                    logger.info("✅ Function result sent via conversation.item.create() (Method 2)")
+                                else:
+                                    raise AttributeError("conversation.item not available")
 
-                            await ws.send(json.dumps(raw_message))
-                            logger.info("✅ Function result sent via raw WebSocket (Method 2)")
-                            bypass_succeeded = True
+                                # Trigger the next response so AI can speak the result
+                                if hasattr(voicelive_connection, 'response'):
+                                    await voicelive_connection.response.create()
+                                    logger.info("✅ Triggered response.create() to continue conversation (Method 2)")
+
+                            elif hasattr(voicelive_connection, 'response'):
+                                # Method 2: Fallback - inject result via additional_instructions
+                                logger.warning("⚠️ conversation.item not available, using fallback method (Method 2)")
+
+                                # Build context message with the function result
+                                if function_name == "lookup_zipcode":
+                                    city = result.get('city', 'Unknown')
+                                    state = result.get('state', 'Unknown')
+                                    zipcode_spoken = result.get('zipcode_spoken', result.get('zipcode', ''))
+
+                                    context_prompt = (
+                                        f"SYSTEM: ZIP code lookup successful. "
+                                        f"ZIP: {zipcode_spoken} is in {city}, {state}. "
+                                        f"Confirm this with the caller naturally."
+                                    )
+                                else:
+                                    context_prompt = f"SYSTEM: Function '{function_name}' returned: {result_json}"
+
+                                await voicelive_connection.response.create(
+                                    additional_instructions=context_prompt
+                                )
+                                logger.info("✅ Function result injected via additional_instructions fallback (Method 2)")
+                            else:
+                                raise AttributeError("Neither conversation nor response objects available on connection")
 
                         except Exception as e:
-                            # The bypass failed. Log it.
-                            logger.error(f"❌ FAILED TO SEND FUNCTION RESULT (SDK Bypass Failure - Method 2): {e}")
+                            # If the SDK method fails, use recovery prompt
+                            logger.error(f"❌ FAILED TO SEND FUNCTION RESULT (Method 2): {e}")
                             logger.error(traceback.format_exc())
-                            # 'bypass_succeeded' remains False
 
-                        # --- NEW ROBUST RECOVERY BLOCK ---
-                        # If the bypass failed, we MUST tell the AI to recover
-                        # by triggering a new response and injecting context.
-                        if not bypass_succeeded:
-                            logger.warning("Bypass failed (Method 2). Triggering new response for LLM recovery.")
                             try:
                                 # Build context-appropriate recovery message
                                 if function_name == "lookup_zipcode":
@@ -1128,12 +1232,13 @@ async def handle_voicelive_event(
 
                                 # Use the SDK's *supported* response.create method
                                 # to force the AI to speak again with new instructions
-                                await voicelive_connection.response.create(
-                                    additional_instructions=recovery_prompt
-                                )
-                                logger.info("✅ Triggered SDK response.create() for graceful tool failure recovery (Method 2).")
+                                if hasattr(voicelive_connection, 'response'):
+                                    await voicelive_connection.response.create(
+                                        additional_instructions=recovery_prompt
+                                    )
+                                    logger.info("✅ Triggered SDK response.create() for graceful tool failure recovery (Method 2).")
                             except Exception as recovery_e:
-                                logger.critical(f"❌ TOTAL FAILURE (Method 2): Could not send bypass AND could not trigger recovery response: {recovery_e}")
+                                logger.critical(f"❌ TOTAL FAILURE (Method 2): Could not send function result AND could not trigger recovery response: {recovery_e}")
                                 logger.error(traceback.format_exc())
             except:
                 pass  # Not a function call event
