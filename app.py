@@ -414,22 +414,19 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         # Configure audio transcription
         transcription = None
         if use_transcription:
-            # Read the transcription prompt from audio_settings
-            transcription_prompt = audio_settings.get('transcription-prompt', None)
-
             # Create transcription options with only supported parameters
-            # Note: temperature and phrase_list are NOT supported by Voice Live SDK
+            # Note: temperature, phrase_list, and prompt are NOT supported by Voice Live SDK
             transcription = AudioInputTranscriptionOptions(
                 model="whisper-1",
-                language="en",
-                prompt=transcription_prompt  # Transcription biasing for domain-specific terms
+                language="en"
             )
 
-            if transcription_prompt:
-                logger.info(f"✅ Whisper Transcription ENABLED (with prompt biasing)")
-                logger.info(f"   Prompt: {transcription_prompt}")
-            else:
-                logger.info("✅ Whisper Transcription ENABLED (no prompt)")
+            logger.info("✅ Whisper Transcription ENABLED")
+
+            # Add a warning if the config key still exists
+            transcription_prompt_setting = audio_settings.get('transcription-prompt', None)
+            if transcription_prompt_setting:
+                logger.warning(f"⚠️ 'transcription-prompt' is set in config, but this SDK version does not support it. Ignoring setting.")
 
         # ──────────────────────────────────────────────────────────────────────
         # FUNCTION CALLING CONFIGURATION

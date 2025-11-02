@@ -182,8 +182,10 @@ class ConfigManager:
             # LLM Settings - Optimized for latency
             if not audio_settings.get('temperature'):
                 audio_settings['temperature'] = 0.8  # Default for conversational
-            if not audio_settings.get('max-response-tokens'):
-                audio_settings['max-response-tokens'] = 1500  # Research: 20% latency improvement from 4096
+
+            # Force the optimal setting for gpt-realtime-mini
+            # The 4096 value in AppConfig is legacy and causes latency
+            audio_settings['max-response-tokens'] = 1500  # Research: 20% latency improvement from 4096
             
             # Transcription Settings - Better accuracy
             if not audio_settings.get('transcription-temperature'):
@@ -274,8 +276,9 @@ class ConfigManager:
             audio_settings['vad-end-utterance-timeout-ms'] = 1000  # Prevents hanging
         if not audio_settings.get('temperature'):
             audio_settings['temperature'] = 0.8
-        if not audio_settings.get('max-response-tokens'):
-            audio_settings['max-response-tokens'] = 1500  # 20% latency improvement
+
+        # Force the optimal setting for gpt-realtime-mini
+        audio_settings['max-response-tokens'] = 1500  # 20% latency improvement
         if not audio_settings.get('transcription-temperature'):
             audio_settings['transcription-temperature'] = 0.0
 
