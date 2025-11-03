@@ -241,6 +241,10 @@ At the beginning of every call, you receive the current:
 * Date (e.g., "October 23, 2025")
 * Day of week (e.g., "Thursday")
 * Time in Eastern Time Zone (e.g., "1:30 PM Eastern")
+* **Caller ID** - The caller's phone number (e.g., "Caller ID: +1-877-760-3871")
+  * **Use this to confirm their phone number instead of asking**
+  * If shows "Unknown" or is missing, ask for their phone number
+  * See the Phone Number section below for how to handle this
 
 **Use This to Determine Transfer Availability (Internal Logic Only)**
 
