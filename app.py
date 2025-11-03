@@ -10,8 +10,8 @@ from datetime import datetime, UTC
 import traceback
 import pytz
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Form
+from fastapi.responses import JSONResponse, Response
 from starlette.websockets import WebSocketState
 from dotenv import load_dotenv
 
@@ -698,9 +698,81 @@ def root():
         ]
     }
 
+# ──────────────────────────────────────────────────────────────────────────────
+# CALLER ID CACHE (for cXML webhook integration)
+# ──────────────────────────────────────────────────────────────────────────────
+# Store caller ID from initial webhook, retrieved later during WebSocket connection
+call_metadata_cache: Dict[str, Dict[str, Any]] = {}
+
+def cache_call_metadata(call_sid: str, metadata: Dict[str, Any], ttl_seconds: int = 300):
+    """Cache call metadata with automatic expiration"""
+    import time
+    call_metadata_cache[call_sid] = {
+        **metadata,
+        "_expires_at": time.time() + ttl_seconds
+    }
+    logger.info(f"📝 Cached metadata for call {call_sid}: {metadata}")
+
+def get_cached_call_metadata(call_sid: str) -> Optional[Dict[str, Any]]:
+    """Retrieve cached call metadata if not expired"""
+    import time
+    if call_sid in call_metadata_cache:
+        metadata = call_metadata_cache[call_sid]
+        if time.time() < metadata.get("_expires_at", 0):
+            return {k: v for k, v in metadata.items() if not k.startswith("_")}
+        else:
+            del call_metadata_cache[call_sid]  # Expired, remove it
+    return None
+
 @app.get("/healthz")
 def healthz():
     return JSONResponse({"ok": True, "status": "healthy"})
+
+@app.post("/webhook/call/{company_id}")
+async def signalwire_call_webhook(company_id: str, request: Request):
+    """
+    Webhook endpoint for SignalWire to send call information before streaming.
+
+    This endpoint receives the initial call parameters (From, To, CallSid, etc.)
+    and caches them so they're available when the WebSocket connects.
+
+    Returns cXML that initiates the media stream.
+    """
+    try:
+        # Parse form data from SignalWire webhook
+        form_data = await request.form()
+        call_sid = form_data.get("CallSid")
+        from_number = form_data.get("From")
+        to_number = form_data.get("To")
+
+        logger.info(f"📞 Webhook received: CallSid={call_sid}, From={from_number}, To={to_number}")
+
+        # Cache the call metadata
+        if call_sid and from_number:
+            cache_call_metadata(call_sid, {
+                "from": from_number,
+                "to": to_number,
+                "call_sid": call_sid
+            })
+
+        # Return cXML to start streaming
+        stream_url = f"wss://voice-agents-bridge.victoriouswave-f95f67ff.eastus2.azurecontainerapps.io/voice/{company_id}"
+
+        cxml_response = f'''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="{stream_url}?call_sid={call_sid}"
+            codec="L16@24000h" />
+  </Connect>
+</Response>'''
+
+        return Response(content=cxml_response, media_type="application/xml")
+
+    except Exception as e:
+        logger.error(f"❌ Webhook error: {e}")
+        logger.error(traceback.format_exc())
+        return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>',
+                       media_type="application/xml")
 
 @app.get("/companies/{company_id}/config")
 def get_company_config(company_id: str):
@@ -727,8 +799,7 @@ def get_company_audio_settings(company_id: str):
 async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
     await signalwire_ws.accept()
 
-    # Extract caller ID from query parameters (for cXML compatibility)
-    # Example: ?caller_id=+1234567890&from=+1234567890
+    # Extract caller ID from query parameters and call metadata cache
     query_params = dict(signalwire_ws.query_params)
 
     # DEBUG: Log all query parameters
@@ -737,10 +808,21 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
     else:
         logger.info(f"🔍 No query parameters in WebSocket URL")
 
+    # Try to get caller ID from:
+    # 1. Query parameters (direct pass-through)
+    # 2. Call metadata cache (webhook-based approach)
     query_caller_id = query_params.get("caller_id") or query_params.get("from")
 
+    # If call_sid is in query params, look up cached metadata
+    call_sid_param = query_params.get("call_sid")
+    if call_sid_param and not query_caller_id:
+        cached_metadata = get_cached_call_metadata(call_sid_param)
+        if cached_metadata:
+            query_caller_id = cached_metadata.get("from")
+            logger.info(f"✅ Retrieved caller ID from cache: {query_caller_id}")
+
     if query_caller_id:
-        logger.info(f"✅ SignalWire connection accepted for company: {company_id} (Caller ID from URL: {query_caller_id})")
+        logger.info(f"✅ SignalWire connection accepted for company: {company_id} (Caller ID: {query_caller_id})")
     else:
         logger.info(f"✅ SignalWire connection accepted for company: {company_id}")
 
