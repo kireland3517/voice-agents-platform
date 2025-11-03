@@ -51,9 +51,9 @@ class ConfigManager:
             return None
         
         try:
-            # UPDATED: Use cedar_instructions.md (inline SSML not supported by Voice Live API)
+            # UPDATED: Use cedar_instructions_realtime_v2_improved.md (production-ready optimized version)
             if company_id == "senior-life":
-                blob_name = "cedar_instructions.md"
+                blob_name = "cedar_instructions_realtime_v2_improved.md"
             else:
                 # Fallback pattern for other companies
                 blob_name = f"{company_id}-instructions.txt"
