@@ -826,7 +826,8 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
     shared_state: Dict[str, Any] = {
         "call_session": None,
         "stream_sid": None,
-        "monitor": SessionMonitor(company_id)  # Add session monitor
+        "monitor": SessionMonitor(company_id),  # Add session monitor
+        "audio_settings": audio_settings  # Add audio settings for quality monitoring
     }
     voicelive_connection = None
     heartbeat_task = None
