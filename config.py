@@ -166,18 +166,30 @@ class ConfigManager:
             audio_settings = self.get_json_config_section(company_id, "audio-settings")
             
             # =========================================================================
-            # RESEARCH-BACKED OPTIMAL SETTINGS (from production PDF research)
+            # RESEARCH-BACKED OPTIMAL SETTINGS (Human Voice Agent Guide)
             # =========================================================================
-            
+
             # VAD Settings - Research shows these values optimal for voice agents
+            # Guide Section: Turn-Taking and Interruption Handling
             if not audio_settings.get('vad-threshold'):
-                audio_settings['vad-threshold'] = 0.5  # Research: 0.5 balanced (was 0.3)
+                audio_settings['vad-threshold'] = 0.3  # Guide: 0.3 for insurance (sensitive)
             if not audio_settings.get('vad-silence-duration-ms'):
-                audio_settings['vad-silence-duration-ms'] = 500  # Research: 500ms sweet spot
+                audio_settings['vad-silence-duration-ms'] = 500  # Guide: 500-600ms sweet spot
             if not audio_settings.get('vad-prefix-padding-ms'):
-                audio_settings['vad-prefix-padding-ms'] = 300  # Research: 300ms optimal (was 200)
+                audio_settings['vad-prefix-padding-ms'] = 300  # Guide: 300ms prevents cutoff
             if not audio_settings.get('vad-end-utterance-timeout-ms'):
-                audio_settings['vad-end-utterance-timeout-ms'] = 1000  # Research: prevents hanging
+                audio_settings['vad-end-utterance-timeout-ms'] = 2000  # Guide: 2s timeout (was 1000)
+
+            # Adaptive VAD Settings for Different Customer Types
+            # Guide: Elderly customers need longer pauses, emotional contexts need patience
+            if not audio_settings.get('vad-silence-duration-elderly-ms'):
+                audio_settings['vad-silence-duration-elderly-ms'] = 700  # Guide: 600-700ms for elderly
+            if not audio_settings.get('vad-silence-duration-claims-ms'):
+                audio_settings['vad-silence-duration-claims-ms'] = 700  # Guide: 700ms for emotional contexts
+            if not audio_settings.get('vad-silence-duration-noisy-ms'):
+                audio_settings['vad-silence-duration-noisy-ms'] = 400  # Guide: 400ms in noisy environments
+            if not audio_settings.get('vad-threshold-noisy'):
+                audio_settings['vad-threshold-noisy'] = 0.6  # Guide: Higher threshold for noise
                 
             # LLM Settings - Optimized for latency
             if not audio_settings.get('temperature'):
@@ -185,7 +197,8 @@ class ConfigManager:
 
             # Force the optimal setting for gpt-realtime-mini
             # The 4096 value in AppConfig is legacy and causes latency
-            audio_settings['max-response-tokens'] = 1500  # Research: 20% latency improvement from 4096
+            # Guide: 150-200 tokens optimal for conversational responses
+            audio_settings['max-response-tokens'] = 200  # Guide: Keep responses short for natural flow
             
             # Transcription Settings - Better accuracy
             if not audio_settings.get('transcription-temperature'):
@@ -224,16 +237,51 @@ class ConfigManager:
             if not audio_settings.get('max-turns-before-text-conversion'):
                 audio_settings['max-turns-before-text-conversion'] = 10  # Save tokens
             
-            # SSML Voice Control Settings
-            if not audio_settings.get('ssml-enabled'):
-                audio_settings['ssml-enabled'] = False  # Can enable for prosody control
-            if not audio_settings.get('ssml-pitch'):
-                audio_settings['ssml-pitch'] = "+5%"  # Research: ±10% optimal
-            if not audio_settings.get('ssml-rate'):
-                audio_settings['ssml-rate'] = "1.0"  # Research: 0.9-1.1x optimal
+            # =========================================================================
+            # VOICE NATURALNESS SETTINGS (Guide: Voice Synthesis for Maximum Naturalness)
+            # =========================================================================
+
+            # Voice HD Neural Settings - Applied at voice config level, not per-response
+            # Guide: HD voices with temperature create foundation for natural sound
+            if not audio_settings.get('voice-temperature'):
+                audio_settings['voice-temperature'] = 0.8  # Guide: 0.7-0.8 for natural prosody
+            if not audio_settings.get('voice-rate'):
+                audio_settings['voice-rate'] = "1.0"  # Guide: 0.9-1.05 for professional (100% normal)
+            if not audio_settings.get('voice-pitch'):
+                audio_settings['voice-pitch'] = "+0%"  # Guide: -1 to +1 semitone for warmth
+            if not audio_settings.get('voice-volume'):
+                audio_settings['voice-volume'] = "+10%"  # Clarity for phone audio
+            if not audio_settings.get('voice-style'):
+                audio_settings['voice-style'] = "customerservice"  # Guide: Professional warmth
+            if not audio_settings.get('voice-style-degree'):
+                audio_settings['voice-style-degree'] = 1.3  # Guide: 1.2-1.4 for insurance contexts
             if not audio_settings.get('ssml-style-degree'):
                 audio_settings['ssml-style-degree'] = 1.2  # Research: 1.2-1.5 natural
-            
+
+            # =========================================================================
+            # LATENCY OPTIMIZATION (Guide: Target 600-800ms voice-to-voice)
+            # =========================================================================
+
+            # Component Latency Targets (Guide Section: Latency Optimization)
+            if not audio_settings.get('latency-target-total-ms'):
+                audio_settings['latency-target-total-ms'] = 800  # Guide: 600-800ms total
+            if not audio_settings.get('latency-target-stt-ms'):
+                audio_settings['latency-target-stt-ms'] = 250  # Guide: 200-300ms for STT
+            if not audio_settings.get('latency-target-llm-ms'):
+                audio_settings['latency-target-llm-ms'] = 250  # Guide: 200-300ms for LLM
+            if not audio_settings.get('latency-target-tts-ms'):
+                audio_settings['latency-target-tts-ms'] = 150  # Guide: 100-150ms for TTS
+            if not audio_settings.get('latency-target-network-ms'):
+                audio_settings['latency-target-network-ms'] = 100  # Guide: ~100ms for network
+
+            # Latency Warning Thresholds (Guide: Perceived Responsiveness)
+            if not audio_settings.get('latency-warning-slow-ms'):
+                audio_settings['latency-warning-slow-ms'] = 1000  # Guide: >1000ms = noticeable delay
+            if not audio_settings.get('latency-warning-very-slow-ms'):
+                audio_settings['latency-warning-very-slow-ms'] = 1500  # Guide: >1500ms = frustrating
+            if not audio_settings.get('latency-warning-instant-ms'):
+                audio_settings['latency-warning-instant-ms'] = 100  # Guide: <100ms = sounds robotic
+
             config['audio-settings'] = audio_settings
             
             # Get detailed instructions from Blob Storage
