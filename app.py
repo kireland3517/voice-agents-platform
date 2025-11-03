@@ -861,7 +861,12 @@ async def handle_voicelive_event(
             transcript_text = event.content
 
         if transcript_text:
-            logger.info(f"📝 USER TRANSCRIPT: {transcript_text}")
+            # Filter out invalid tokens from transcript (especially <|audio_text|>)
+            INVALID_TOKENS = {"<|audio_text|>", "<|end_of_text|>", "null", ""}
+            if transcript_text.strip() not in INVALID_TOKENS and "<|audio_text|>" not in transcript_text:
+                logger.info(f"📝 USER TRANSCRIPT: {transcript_text}")
+            else:
+                logger.warning(f"🚫 FILTERED INVALID TOKEN FROM TRANSCRIPT: '{transcript_text}'")
 
     # Log AI response text and filter invalid tokens
     if 'text' in event_type_str.lower() and 'delta' in event_type_str.lower():
