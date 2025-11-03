@@ -22,5 +22,5 @@ websocket-client==1.8.0
 azure-ai-voicelive
 
 # Audio quality monitoring dependencies
-pesq==0.0.4  # PESQ MOS scoring (ITU-T P.862 compliant)
+# pesq==0.0.4  # PESQ MOS scoring (ITU-T P.862 compliant) - OPTIONAL: Requires gcc to build
 scipy==1.11.4  # Audio resampling and signal processing
