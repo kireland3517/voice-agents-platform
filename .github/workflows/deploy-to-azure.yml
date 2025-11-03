@@ -286,16 +286,49 @@ jobs:
           tenant-id: ${{ secrets.VOICEAGENTSBRIDGE_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.VOICEAGENTSBRIDGE_AZURE_SUBSCRIPTION_ID }}
 
+      - name: Install Azure Container Apps extension
+        run: az extension add --name containerapp --upgrade --yes
+
       - name: Deploy to Azure Container Apps (Staging)
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          appSourcePath: ${{ github.workspace }}
-          registryUrl: ${{ env.REGISTRY_URL }}
-          registryUsername: ${{ secrets.VOICEAGENTSBRIDGE_REGISTRY_USERNAME }}
-          registryPassword: ${{ secrets.VOICEAGENTSBRIDGE_REGISTRY_PASSWORD }}
-          containerAppName: ${{ env.CONTAINER_APP_NAME }}-staging
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          environmentVariables: ENVIRONMENT=staging LOG_LEVEL=DEBUG ENABLE_DETAILED_LOGGING=true
+        run: |
+          # Extract the first tag from the build job output
+          IMAGE_TAG="${{ needs.build.outputs.image-tag }}"
+          IMAGE=$(echo "$IMAGE_TAG" | head -n1)
+
+          echo "Deploying image: $IMAGE"
+
+          # Check if container app exists
+          if az containerapp show -n ${{ env.CONTAINER_APP_NAME }}-staging -g ${{ env.RESOURCE_GROUP }} > /dev/null 2>&1; then
+            echo "Updating existing container app..."
+            az containerapp update \
+              -n ${{ env.CONTAINER_APP_NAME }}-staging \
+              -g ${{ env.RESOURCE_GROUP }} \
+              --image "$IMAGE" \
+              --set-env-vars \
+                ENVIRONMENT=staging \
+                LOG_LEVEL=DEBUG \
+                ENABLE_DETAILED_LOGGING=true
+          else
+            echo "Creating new container app..."
+            az containerapp create \
+              -n ${{ env.CONTAINER_APP_NAME }}-staging \
+              -g ${{ env.RESOURCE_GROUP }} \
+              --image "$IMAGE" \
+              --environment voice-agents-env \
+              --registry-server ${{ env.REGISTRY_URL }} \
+              --registry-username ${{ secrets.VOICEAGENTSBRIDGE_REGISTRY_USERNAME }} \
+              --registry-password ${{ secrets.VOICEAGENTSBRIDGE_REGISTRY_PASSWORD }} \
+              --target-port 8000 \
+              --ingress external \
+              --env-vars \
+                ENVIRONMENT=staging \
+                LOG_LEVEL=DEBUG \
+                ENABLE_DETAILED_LOGGING=true \
+              --cpu 0.5 \
+              --memory 1.0Gi \
+              --min-replicas 1 \
+              --max-replicas 3
+          fi
 
       - name: Deployment verification (Staging)
         run: |
@@ -356,27 +389,36 @@ jobs:
           tenant-id: ${{ secrets.VOICEAGENTSBRIDGE_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.VOICEAGENTSBRIDGE_AZURE_SUBSCRIPTION_ID }}
 
+      - name: Install Azure Container Apps extension
+        run: az extension add --name containerapp --upgrade --yes
+
       - name: Get current revision (for rollback)
         id: current-revision
         run: |
           CURRENT_REVISION=$(az containerapp revision list \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query "[0].name" -o tsv)
+            --query "[0].name" -o tsv || echo "")
           echo "current-revision=$CURRENT_REVISION" >> $GITHUB_OUTPUT
           echo "Current production revision: $CURRENT_REVISION"
 
       - name: Deploy to Azure Container Apps (Production)
         id: deploy-production
-        uses: azure/container-apps-deploy-action@v2
-        with:
-          appSourcePath: ${{ github.workspace }}
-          registryUrl: ${{ env.REGISTRY_URL }}
-          registryUsername: ${{ secrets.VOICEAGENTSBRIDGE_REGISTRY_USERNAME }}
-          registryPassword: ${{ secrets.VOICEAGENTSBRIDGE_REGISTRY_PASSWORD }}
-          containerAppName: ${{ env.CONTAINER_APP_NAME }}
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          environmentVariables: ENVIRONMENT=production LOG_LEVEL=INFO ENABLE_DETAILED_LOGGING=false
+        run: |
+          # Extract the first tag from the build job output
+          IMAGE_TAG="${{ needs.build.outputs.image-tag }}"
+          IMAGE=$(echo "$IMAGE_TAG" | head -n1)
+
+          echo "Deploying image: $IMAGE"
+
+          az containerapp update \
+            -n ${{ env.CONTAINER_APP_NAME }} \
+            -g ${{ env.RESOURCE_GROUP }} \
+            --image "$IMAGE" \
+            --set-env-vars \
+              ENVIRONMENT=production \
+              LOG_LEVEL=INFO \
+              ENABLE_DETAILED_LOGGING=false
 
       - name: Deployment verification (Production)
         id: verify
