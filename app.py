@@ -875,7 +875,33 @@ async def handle_voicelive_event(
             # Filter out invalid LLM tokens that should not be spoken
             INVALID_TOKENS = {"<|audio_text|>", "<|end_of_text|>", "null", ""}
             if response_text.strip() in INVALID_TOKENS or "<|audio_text|>" in response_text:
-                logger.warning(f"🚫 Suppressed invalid LLM token: '{response_text}'")
+                logger.warning(f"🚫 DETECTED INVALID TOKEN: '{response_text}' - Triggering recovery")
+
+                # Trigger a recovery response to prevent audio-only output
+                # This happens when caller makes side comments or conversational asides
+                try:
+                    # Cancel the current response that's generating invalid tokens
+                    if hasattr(voicelive_connection, 'response'):
+                        # Trigger a new response with instructions to continue naturally
+                        asyncio.create_task(
+                            voicelive_connection.response.create(
+                                instructions="""RECOVERY MODE: You just attempted to generate an invalid response.
+
+The caller may have made a side comment or conversational aside.
+Please continue collecting the information you need naturally.
+
+If you just asked for information (phone, address, etc.), politely say:
+"I want to make sure I get that correctly - could you repeat that for me?"
+
+Stay focused on your current task in the call flow.""",
+                                temperature=0.7,
+                                max_tokens=150
+                            )
+                        )
+                        logger.info("✅ Recovery response triggered for invalid token")
+                except Exception as recovery_err:
+                    logger.error(f"❌ Failed to trigger recovery: {recovery_err}")
+
                 # Don't log or process this text further
                 # DON'T mark as having text - this is an invalid token
             else:
