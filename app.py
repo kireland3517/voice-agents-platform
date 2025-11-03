@@ -128,6 +128,41 @@ AZURE_VOICE_MAP = {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
+# CALLER ID NORMALIZATION
+# ──────────────────────────────────────────────────────────────────────────────
+def normalize_caller_id(caller: Optional[str]) -> Optional[str]:
+    """
+    Extract E.164 phone number from various SIP URI formats.
+
+    Handles formats like:
+    - "tel:+1234567890"
+    - "sip:+1234567890@domain"
+    - "<sip:+1234567890@domain>"
+    - "+1234567890"
+    - Plain numbers: "1234567890"
+
+    Returns normalized E.164 format or None if invalid.
+    """
+    if not caller:
+        return None
+
+    import re
+
+    # Extract phone number from SIP URI formats
+    # Match: optional tel:/sip: prefix, optional +, then 10-15 digits
+    match = re.search(r'(?:tel:|sip:)?(\+?\d{10,15})', caller)
+
+    if match:
+        number = match.group(1)
+        # Ensure it starts with + for E.164 format
+        if not number.startswith('+'):
+            # Assume US/Canada if no country code (you may need to adjust this)
+            number = '+1' + number if len(number) == 10 else '+' + number
+        return number
+
+    return caller  # Return as-is if we can't parse it
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CALL SESSION (SIMPLIFIED - NO BARGE-IN STATE)
 # ──────────────────────────────────────────────────────────────────────────────
 class CallSession:
@@ -1407,8 +1442,25 @@ async def send_signalwire_audio_to_voicelive(
 
                     elif event_name == "start":
                         stream_sid = (data.get("start") or {}).get("streamSid")
-                        caller_phone = (data.get("start") or {}).get("from")
-                        media_format = (data.get("start") or {}).get("mediaFormat", {})
+                        start_data = data.get("start") or {}
+                        media_format = start_data.get("mediaFormat", {})
+
+                        # Extract caller ID with priority:
+                        # 1. customParameters.caller_id (from SWML custom_parameters)
+                        # 2. customParameters.original_caller (P-Asserted-Identity from SIP headers)
+                        # 3. start.from (basic SignalWire caller ID)
+                        custom_params = start_data.get("customParameters", {})
+                        raw_caller = (
+                            custom_params.get("caller_id") or
+                            custom_params.get("original_caller") or
+                            start_data.get("from")
+                        )
+
+                        # Normalize caller ID to E.164 format
+                        caller_phone = normalize_caller_id(raw_caller)
+
+                        logger.info(f"📞 Raw caller ID: {raw_caller}")
+                        logger.info(f"📞 Normalized caller ID: {caller_phone}")
 
                         # Create call session
                         call_session = CallSession(company_id, stream_sid or "unknown")
