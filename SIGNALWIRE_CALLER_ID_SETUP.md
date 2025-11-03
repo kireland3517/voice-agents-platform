@@ -8,11 +8,52 @@ This document explains how to pass caller ID information from SignalWire to Azur
 
 When SignalWire receives a call with SIP headers (like `P-Asserted-Identity`), these headers are not automatically passed through the WebSocket Media Stream to your application. The basic `from` field only contains the SignalWire caller ID, not the original SIP header values.
 
-## The Solution
+## Solutions
 
-Use SignalWire's `customParameters` in your SWML configuration to explicitly pass caller ID information through the WebSocket connection.
+The application supports **two methods** for passing caller ID:
 
-## SWML Configuration
+1. **cXML (TwiML Compatibility XML)** - Query parameters in the WebSocket URL
+2. **SWML** - Custom parameters in the stream configuration
+
+---
+
+## Method 1: cXML with Query Parameters (Recommended for TwiML Users)
+
+### Configuration
+
+Add query parameters to your Stream URL in the cXML response:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="wss://voice-agents-bridge.victoriouswave-f95f67ff.eastus2.azurecontainerapps.io/voice/senior-life?caller_id={From}"
+            codec="L16@24000h" />
+  </Connect>
+</Response>
+```
+
+### Available Variables
+
+SignalWire/Twilio TwiML supports these variables:
+- `{From}` - Caller's phone number
+- `{To}` - Dialed number
+- `{CallSid}` - Unique call identifier
+
+### Multiple Parameters
+
+You can pass multiple parameters:
+
+```xml
+<Stream url="wss://your-app.com/voice/company-id?caller_id={From}&amp;call_sid={CallSid}"
+        codec="L16@24000h" />
+```
+
+**Note:** Use `&amp;` instead of `&` in XML.
+
+---
+
+## Method 2: SWML Configuration
 
 ### Basic Setup (Recommended)
 
@@ -72,9 +113,10 @@ sections:
 
 The voice-agents-bridge application will automatically:
 
-1. **Extract caller ID** from `customParameters` with priority:
-   - `customParameters.caller_id` (highest priority)
-   - `customParameters.original_caller` (P-Asserted-Identity fallback)
+1. **Extract caller ID** with priority:
+   - **Query parameters** from URL: `?caller_id=xxx` or `?from=xxx` (highest priority - cXML)
+   - `customParameters.caller_id` (SWML custom_parameters)
+   - `customParameters.original_caller` (P-Asserted-Identity from SWML)
    - `start.from` (basic SignalWire caller ID fallback)
 
 2. **Normalize the format** to E.164:
@@ -88,12 +130,22 @@ The voice-agents-bridge application will automatically:
 
 ## Verification
 
-After deploying your SWML changes, make a test call and check the logs:
+After deploying your cXML or SWML changes, make a test call and check the logs:
 
+### cXML (Query Parameters)
 ```
-📞 Raw caller ID: tel:+12345678901
+✅ SignalWire connection accepted for company: senior-life (Caller ID from URL: +12345678901)
+📞 Raw caller ID: +12345678901
+📞 Caller ID source: URL query parameter
 📞 Normalized caller ID: +12345678901
-📞 Caller ID: +12345678901
+```
+
+### SWML (Custom Parameters)
+```
+✅ SignalWire connection accepted for company: senior-life
+📞 Raw caller ID: tel:+12345678901
+📞 Caller ID source: SWML customParameters
+📞 Normalized caller ID: +12345678901
 ```
 
 The normalized caller ID will be included in the Azure AI session context for the agent to reference.
@@ -105,6 +157,13 @@ The normalized caller ID will be included in the Azure AI session context for th
 **Problem:** The application is not receiving caller ID information.
 
 **Solutions:**
+
+**For cXML users:**
+1. Verify your cXML includes `?caller_id={From}` in the Stream URL
+2. Check that you're using `{From}` (with curly braces) not `$From`
+3. Ensure your cXML is deployed as the webhook URL for your SignalWire number
+
+**For SWML users:**
 1. Verify your SWML includes `custom_parameters` with `caller_id`
 2. Check that you're using `${call.from}` variable syntax correctly
 3. Ensure your SWML is deployed and active on your SignalWire number
