@@ -375,11 +375,11 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             rate="1.0",  # Normal speed
             pitch="+0%",  # Natural pitch (was +15%, too nasally)
             volume="+10%",  # Slightly louder for clarity
-            style="customerservice"  # Professional, helpful tone
+            style="friendly"  # Warm, approachable tone for natural conversation
             # NOTE: style_degree and temperature are NOT supported by AzureStandardVoice in the current SDK
         )
 
-        logger.info(f"   Voice properties: rate=1.0, pitch=+0%, volume=+10%, style=customerservice")
+        logger.info(f"   Voice properties: rate=1.0, pitch=+0%, volume=+10%, style=friendly")
 
         # Configure Semantic VAD for optimal conversation
         # More sensitive configuration to better detect caller speech
