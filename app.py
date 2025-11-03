@@ -373,24 +373,24 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             name=azure_voice_name,  # Uses HD voice
             type="azure-standard",
             rate="1.0",  # Normal speed
-            pitch="+5%",  # Slightly higher pitch for friendlier tone (was +0%)
+            pitch="+15%",  # Higher pitch for warmer, friendlier tone (was +5%)
             volume="+10%",  # Slightly louder for clarity
             style="customerservice"  # Professional, helpful tone
             # NOTE: style_degree and temperature are NOT supported by AzureStandardVoice in the current SDK
         )
 
-        logger.info(f"   Voice properties: rate=1.0, pitch=+5%, volume=+10%, style=customerservice")
+        logger.info(f"   Voice properties: rate=1.0, pitch=+15%, volume=+10%, style=customerservice")
 
         # Configure Semantic VAD for optimal conversation
-        # Balanced configuration for clear turn-taking
+        # More sensitive configuration to better detect caller speech
         turn_detection_config = AzureSemanticVad(
-            threshold=0.3,  # More sensitive to detect caller speech
-            prefix_padding_ms=300,  # Standard padding (reverted from 500ms - was too slow)
-            silence_duration_ms=500,  # Balanced - responsive but not too quick (reverted from 700ms)
+            threshold=0.2,  # MORE sensitive to detect quieter caller speech (was 0.3)
+            prefix_padding_ms=400,  # Capture more of speech start (was 300ms)
+            silence_duration_ms=500,  # Balanced - responsive but not too quick
             remove_filler_words=False  # KEEP customer's natural speech
             # NOTE: end_of_utterance_detection is NOT supported by AzureSemanticVad
         )
-        logger.info(f"✅ Semantic VAD ENABLED (threshold=0.3, prefix_padding=300ms, silence=500ms)")
+        logger.info(f"✅ Semantic VAD ENABLED (threshold=0.2, prefix_padding=400ms, silence=500ms)")
 
         # Configure noise suppression
         noise_reduction = None
@@ -481,8 +481,8 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info("=" * 80)
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
         logger.info(f"   Voice: {azure_voice_name} (Azure HD Neural TTS)")
-        logger.info(f"   Voice Config: rate=1.0, pitch=+5%, volume=+10%, style=customerservice")
-        logger.info(f"   VAD: Semantic (threshold=0.3, prefix_padding=300ms, silence=500ms)")
+        logger.info(f"   Voice Config: rate=1.0, pitch=+15%, volume=+10%, style=customerservice")
+        logger.info(f"   VAD: Semantic (threshold=0.2, prefix_padding=400ms, silence=500ms)")
         logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.7)}, max_tokens={audio_settings.get('max-response-tokens', 200)}")
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}")
         logger.info("=" * 80)
