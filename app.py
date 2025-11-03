@@ -808,13 +808,26 @@ class ResponseTracker:
     def __init__(self):
         self.current_response_has_text = False
         self.suppressed_audio_count = 0
-        self.has_invalid_token = False  # NEW: Track if response contains invalid token
+        self.has_invalid_token = False  # Track if response contains invalid token
+        self.transcript_buffer = ""  # Buffer to accumulate transcript deltas
 
     def start_response(self):
         """Reset for new response"""
         self.current_response_has_text = False
         self.suppressed_audio_count = 0
-        self.has_invalid_token = False  # Reset invalid token flag
+        self.has_invalid_token = False
+        self.transcript_buffer = ""  # Reset buffer
+
+    def add_transcript_delta(self, delta_text: str):
+        """Add transcript delta and check for invalid tokens"""
+        self.transcript_buffer += delta_text
+
+        # Check if the accumulated buffer contains invalid token
+        if "<|audio_text|>" in self.transcript_buffer or "<|end_of_text|>" in self.transcript_buffer:
+            logger.error(f"🚨 INVALID TOKEN DETECTED IN TRANSCRIPT BUFFER: '{self.transcript_buffer}'")
+            self.has_invalid_token = True
+            return True  # Signal that invalid token was found
+        return False
 
     def mark_text_received(self):
         """Mark that text was received for current response"""
@@ -859,6 +872,16 @@ async def handle_voicelive_event(
     # ──────────────────────────────────────────────────────────────────────
     # Log user speech transcripts
     event_type_str = str(event.type)
+
+    # Special handling for response.audio_transcript.delta - check for invalid tokens character by character
+    if event_type_str == 'ServerEventType.RESPONSE_AUDIO_TRANSCRIPT_DELTA' or 'audio_transcript.delta' in event_type_str.lower():
+        if hasattr(event, 'delta') and event.delta:
+            # Add to buffer and check for invalid tokens
+            if response_tracker.add_transcript_delta(str(event.delta)):
+                # Invalid token detected! Don't process further
+                logger.error("🚨 STOPPING - Invalid token detected in audio transcript delta")
+                return
+
     if 'transcription' in event_type_str.lower() or 'transcript' in event_type_str.lower():
         transcript_text = None
         if hasattr(event, 'transcript'):
@@ -867,18 +890,24 @@ async def handle_voicelive_event(
             transcript_text = event.text
         elif hasattr(event, 'content'):
             transcript_text = event.content
+        elif hasattr(event, 'delta'):
+            transcript_text = event.delta
 
         if transcript_text:
             # Filter out invalid tokens from transcript (especially <|audio_text|>)
             INVALID_TOKENS = {"<|audio_text|>", "<|end_of_text|>", "null", ""}
-            if transcript_text.strip() not in INVALID_TOKENS and "<|audio_text|>" not in transcript_text:
+
+            # Check for invalid token - even in delta events to catch it early
+            if "<|audio_text|>" in str(transcript_text):
+                logger.error(f"🚨 DETECTED INVALID TOKEN '<|audio_text|>' - MARKING FOR SUPPRESSION")
+                response_tracker.mark_invalid_token()
+                return  # Don't process this event further
+
+            if transcript_text.strip() not in INVALID_TOKENS:
                 # Note: This could be user OR assistant transcript depending on event type
                 logger.info(f"📝 TRANSCRIPT: {transcript_text}")
             else:
-                logger.warning(f"🚫 INVALID TOKEN IN TRANSCRIPT: '{transcript_text}' - SUPPRESSING ALL AUDIO")
-                # CRITICAL: Mark response tracker to suppress ALL audio for this response
-                # This prevents "<|audio_text|>" from being spoken as "audio underscore text"
-                response_tracker.mark_invalid_token()
+                logger.warning(f"🚫 FILTERED INVALID TOKEN: '{transcript_text}'")
 
     # Log AI response text and filter invalid tokens
     if 'text' in event_type_str.lower() and 'delta' in event_type_str.lower():
