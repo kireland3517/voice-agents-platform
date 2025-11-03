@@ -295,7 +295,6 @@ jobs:
           registryPassword: ${{ secrets.VOICEAGENTSBRIDGE_REGISTRY_PASSWORD }}
           containerAppName: ${{ env.CONTAINER_APP_NAME }}-staging
           resourceGroup: ${{ env.RESOURCE_GROUP }}
-          imageToDeploy: ${{ env.REGISTRY_URL }}/${{ env.CONTAINER_APP_NAME }}:${{ github.sha }}
           environmentVariables: ENVIRONMENT=staging LOG_LEVEL=DEBUG ENABLE_DETAILED_LOGGING=true
 
       - name: Deployment verification (Staging)
@@ -377,7 +376,6 @@ jobs:
           registryPassword: ${{ secrets.VOICEAGENTSBRIDGE_REGISTRY_PASSWORD }}
           containerAppName: ${{ env.CONTAINER_APP_NAME }}
           resourceGroup: ${{ env.RESOURCE_GROUP }}
-          imageToDeploy: ${{ env.REGISTRY_URL }}/${{ env.CONTAINER_APP_NAME }}:${{ github.sha }}
           environmentVariables: ENVIRONMENT=production LOG_LEVEL=INFO ENABLE_DETAILED_LOGGING=false
 
       - name: Deployment verification (Production)
