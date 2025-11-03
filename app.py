@@ -367,32 +367,30 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             azure_voice_name = "en-US-FableTurboMultilingualNeural"
             logger.warning(f"⚠️ Voice '{voice_name}' not recognized, using default: {azure_voice_name}")
 
-        # Configure Azure HD TTS voice optimized for ELDERLY customers
-        # Static configuration - optimized for senior life insurance use case
+        # Configure Azure HD TTS voice
+        # Optimized for clarity and natural conversation
         voice_config = AzureStandardVoice(
-            name=azure_voice_name,  # Uses HD voice (en-US-Andrew:DragonHDLatestNeural for Cedar)
+            name=azure_voice_name,  # Uses HD voice
             type="azure-standard",
-            rate="0.85",  # Much slower for elderly customers
+            rate="1.0",  # Normal speed (was 0.85 - too slow)
             pitch="+0%",  # Neutral pitch - calm and clear
-            volume="+15%",  # Louder for hearing clarity
+            volume="+10%",  # Slightly louder for clarity (reduced from +15%)
             style="customerservice"  # Professional, helpful tone
             # NOTE: style_degree and temperature are NOT supported by AzureStandardVoice in the current SDK
-            # These parameters may be available in the LLM session config instead
         )
 
-        logger.info(f"   Voice properties (elderly-optimized): rate=0.85, pitch=+0%, volume=+15%, style=customerservice")
+        logger.info(f"   Voice properties: rate=1.0, pitch=+0%, volume=+10%, style=customerservice")
 
-        # Configure Semantic VAD - ALWAYS ON for optimal elderly customer experience
-        # Hardcoded configuration optimized for senior life insurance use case
+        # Configure Semantic VAD for optimal conversation
+        # Balanced configuration for clear turn-taking
         turn_detection_config = AzureSemanticVad(
-            threshold=0.5,  # Higher threshold = less sensitive, fewer false triggers
+            threshold=0.3,  # More sensitive (was 0.5 - too high, Cedar couldn't hear caller)
             prefix_padding_ms=300,  # More context
-            silence_duration_ms=600,  # Longer for elderly customers (increased from default)
+            silence_duration_ms=500,  # Balanced pause detection (was 600ms)
             remove_filler_words=False  # KEEP customer's natural speech
             # NOTE: end_of_utterance_detection is NOT supported by AzureSemanticVad
-            # The silence_duration_ms parameter provides patience for elderly customers
         )
-        logger.info(f"✅ Semantic VAD ENABLED (threshold=0.5, silence=600ms, filler_removal=False)")
+        logger.info(f"✅ Semantic VAD ENABLED (threshold=0.3, silence=500ms, filler_removal=False)")
 
         # Configure noise suppression
         noise_reduction = None
@@ -483,8 +481,8 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info("=" * 80)
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
         logger.info(f"   Voice: {azure_voice_name} (Azure HD Neural TTS)")
-        logger.info(f"   Voice Config: rate=0.85, pitch=+0%, volume=+15%, style=customerservice")
-        logger.info(f"   VAD: Semantic (threshold=0.5, silence=600ms)")
+        logger.info(f"   Voice Config: rate=1.0, pitch=+0%, volume=+10%, style=customerservice")
+        logger.info(f"   VAD: Semantic (threshold=0.3, silence=500ms)")
         logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.7)}, max_tokens={audio_settings.get('max-response-tokens', 200)}")
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}")
         logger.info("=" * 80)
