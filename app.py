@@ -726,7 +726,16 @@ def get_company_audio_settings(company_id: str):
 @app.websocket("/voice/{company_id}")
 async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
     await signalwire_ws.accept()
-    logger.info(f"✅ SignalWire connection accepted for company: {company_id}")
+
+    # Extract caller ID from query parameters (for cXML compatibility)
+    # Example: ?caller_id=+1234567890&from=+1234567890
+    query_params = dict(signalwire_ws.query_params)
+    query_caller_id = query_params.get("caller_id") or query_params.get("from")
+
+    if query_caller_id:
+        logger.info(f"✅ SignalWire connection accepted for company: {company_id} (Caller ID from URL: {query_caller_id})")
+    else:
+        logger.info(f"✅ SignalWire connection accepted for company: {company_id}")
 
     try:
         company_config = get_cached_config(company_id)
@@ -750,7 +759,8 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
     shared_state: Dict[str, Any] = {
         "call_session": None,
         "stream_sid": None,
-        "monitor": SessionMonitor(company_id)  # Add session monitor
+        "monitor": SessionMonitor(company_id),  # Add session monitor
+        "query_caller_id": query_caller_id  # Caller ID from URL query parameters
     }
     voicelive_connection = None
     heartbeat_task = None
@@ -1446,11 +1456,14 @@ async def send_signalwire_audio_to_voicelive(
                         media_format = start_data.get("mediaFormat", {})
 
                         # Extract caller ID with priority:
-                        # 1. customParameters.caller_id (from SWML custom_parameters)
-                        # 2. customParameters.original_caller (P-Asserted-Identity from SIP headers)
-                        # 3. start.from (basic SignalWire caller ID)
+                        # 1. Query parameters (for cXML compatibility: ?caller_id=xxx or ?from=xxx)
+                        # 2. customParameters.caller_id (from SWML custom_parameters)
+                        # 3. customParameters.original_caller (P-Asserted-Identity from SIP headers)
+                        # 4. start.from (basic SignalWire caller ID)
+                        query_caller = shared_state.get("query_caller_id")
                         custom_params = start_data.get("customParameters", {})
                         raw_caller = (
+                            query_caller or
                             custom_params.get("caller_id") or
                             custom_params.get("original_caller") or
                             start_data.get("from")
@@ -1460,6 +1473,12 @@ async def send_signalwire_audio_to_voicelive(
                         caller_phone = normalize_caller_id(raw_caller)
 
                         logger.info(f"📞 Raw caller ID: {raw_caller}")
+                        if query_caller:
+                            logger.info(f"📞 Caller ID source: URL query parameter")
+                        elif custom_params.get("caller_id"):
+                            logger.info(f"📞 Caller ID source: SWML customParameters")
+                        else:
+                            logger.info(f"📞 Caller ID source: SignalWire start.from")
                         logger.info(f"📞 Normalized caller ID: {caller_phone}")
 
                         # Create call session
