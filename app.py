@@ -881,6 +881,8 @@ async def handle_voicelive_event(
                 # Invalid token detected! Don't process further
                 logger.error("🚨 STOPPING - Invalid token detected in audio transcript delta")
                 return
+            # Don't log individual delta characters/words - too noisy
+            return  # Skip further processing for delta events
 
     if 'transcription' in event_type_str.lower() or 'transcript' in event_type_str.lower():
         transcript_text = None
@@ -890,14 +892,12 @@ async def handle_voicelive_event(
             transcript_text = event.text
         elif hasattr(event, 'content'):
             transcript_text = event.content
-        elif hasattr(event, 'delta'):
-            transcript_text = event.delta
 
         if transcript_text:
             # Filter out invalid tokens from transcript (especially <|audio_text|>)
             INVALID_TOKENS = {"<|audio_text|>", "<|end_of_text|>", "null", ""}
 
-            # Check for invalid token - even in delta events to catch it early
+            # Check for invalid token
             if "<|audio_text|>" in str(transcript_text):
                 logger.error(f"🚨 DETECTED INVALID TOKEN '<|audio_text|>' - MARKING FOR SUPPRESSION")
                 response_tracker.mark_invalid_token()
