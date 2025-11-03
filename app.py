@@ -730,6 +730,13 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
     # Extract caller ID from query parameters (for cXML compatibility)
     # Example: ?caller_id=+1234567890&from=+1234567890
     query_params = dict(signalwire_ws.query_params)
+
+    # DEBUG: Log all query parameters
+    if query_params:
+        logger.info(f"🔍 Query parameters received: {query_params}")
+    else:
+        logger.info(f"🔍 No query parameters in WebSocket URL")
+
     query_caller_id = query_params.get("caller_id") or query_params.get("from")
 
     if query_caller_id:
@@ -1454,6 +1461,9 @@ async def send_signalwire_audio_to_voicelive(
                         stream_sid = (data.get("start") or {}).get("streamSid")
                         start_data = data.get("start") or {}
                         media_format = start_data.get("mediaFormat", {})
+
+                        # DEBUG: Log the full start event data
+                        logger.info(f"🔍 Start event data: streamSid={stream_sid}, from={start_data.get('from')}, customParameters={start_data.get('customParameters')}")
 
                         # Extract caller ID with priority:
                         # 1. Query parameters (for cXML compatibility: ?caller_id=xxx or ?from=xxx)
