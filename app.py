@@ -878,8 +878,28 @@ async def handle_voicelive_event(
         if hasattr(event, 'delta') and event.delta:
             # Add to buffer and check for invalid tokens
             if response_tracker.add_transcript_delta(str(event.delta)):
-                # Invalid token detected! Don't process further
-                logger.error("🚨 STOPPING - Invalid token detected in audio transcript delta")
+                # Invalid token detected! Trigger recovery to prevent silence
+                logger.error("🚨 INVALID TOKEN IN DELTA - Triggering recovery response")
+
+                # Trigger a recovery response to continue naturally
+                try:
+                    if hasattr(voicelive_connection, 'response'):
+                        asyncio.create_task(
+                            voicelive_connection.response.create(
+                                instructions="""RECOVERY MODE: Invalid response detected.
+
+The caller just provided information. Continue collecting the next required field naturally.
+Do NOT repeat what they just said. Move directly to the next question in your workflow.
+
+If you were collecting phone/email/address, continue to the next field.""",
+                                temperature=0.7,
+                                max_tokens=150
+                            )
+                        )
+                        logger.info("✅ Recovery response triggered for invalid transcript token")
+                except Exception as recovery_err:
+                    logger.error(f"❌ Failed to trigger recovery: {recovery_err}")
+
                 return
             # Don't log individual delta characters/words - too noisy
             return  # Skip further processing for delta events
@@ -899,8 +919,28 @@ async def handle_voicelive_event(
 
             # Check for invalid token
             if "<|audio_text|>" in str(transcript_text):
-                logger.error(f"🚨 DETECTED INVALID TOKEN '<|audio_text|>' - MARKING FOR SUPPRESSION")
+                logger.error(f"🚨 DETECTED INVALID TOKEN '<|audio_text|>' - Triggering recovery")
                 response_tracker.mark_invalid_token()
+
+                # Trigger recovery if not already triggered
+                try:
+                    if hasattr(voicelive_connection, 'response'):
+                        asyncio.create_task(
+                            voicelive_connection.response.create(
+                                instructions="""RECOVERY MODE: Invalid response detected.
+
+The caller just provided information. Continue collecting the next required field naturally.
+Do NOT repeat what they just said. Move directly to the next question in your workflow.
+
+If you were collecting phone/email/address, continue to the next field.""",
+                                temperature=0.7,
+                                max_tokens=150
+                            )
+                        )
+                        logger.info("✅ Recovery response triggered for invalid transcript.done token")
+                except Exception as recovery_err:
+                    logger.error(f"❌ Failed to trigger recovery: {recovery_err}")
+
                 return  # Don't process this event further
 
             if transcript_text.strip() not in INVALID_TOKENS:
