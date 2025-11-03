@@ -223,6 +223,50 @@ class ConfigManager:
                 audio_settings['token-warning-threshold'] = 100000  # ~78% of 128k limit
             if not audio_settings.get('max-turns-before-text-conversion'):
                 audio_settings['max-turns-before-text-conversion'] = 10  # Save tokens
+
+            # =========================================================================
+            # QUALITY MONITORING SETTINGS (Azure S2S Voice Agent Quality Guide)
+            # =========================================================================
+
+            # Audio Quality Thresholds
+            if not audio_settings.get('quality-min-snr-db'):
+                audio_settings['quality-min-snr-db'] = 20.0  # Below 20 dB = quality warning
+            if not audio_settings.get('quality-min-mos'):
+                audio_settings['quality-min-mos'] = 3.0  # Below 3.0 = poor quality
+            if not audio_settings.get('quality-max-clipping-rate'):
+                audio_settings['quality-max-clipping-rate'] = 0.05  # > 5% clipping = alert
+
+            # Network Quality Thresholds (from Guide Section 3.2)
+            if not audio_settings.get('quality-jitter-warning-ms'):
+                audio_settings['quality-jitter-warning-ms'] = 30.0  # Guide: > 30ms = robotic audio
+            if not audio_settings.get('quality-packet-loss-warning'):
+                audio_settings['quality-packet-loss-warning'] = 0.10  # Guide: > 10% = severe degradation
+            if not audio_settings.get('quality-rtt-warning-ms'):
+                audio_settings['quality-rtt-warning-ms'] = 500.0  # Guide: > 500ms = turn-taking issues
+
+            # Turn-Timing Thresholds (from Guide Section 6.2)
+            if not audio_settings.get('quality-min-response-gap-ms'):
+                audio_settings['quality-min-response-gap-ms'] = 200.0  # Guide: < 200ms = too fast/robotic
+            if not audio_settings.get('quality-max-response-gap-ms'):
+                audio_settings['quality-max-response-gap-ms'] = 500.0  # Guide: > 500ms = awkward delay
+            if not audio_settings.get('quality-ideal-response-gap-ms'):
+                audio_settings['quality-ideal-response-gap-ms'] = 350.0  # Guide: 200-500ms = natural
+
+            # Quality Monitoring Enablement
+            if not audio_settings.get('enable-audio-quality-monitoring'):
+                audio_settings['enable-audio-quality-monitoring'] = True
+            if not audio_settings.get('enable-network-diagnostics'):
+                audio_settings['enable-network-diagnostics'] = True
+            if not audio_settings.get('enable-mos-scoring'):
+                audio_settings['enable-mos-scoring'] = False  # Disabled by default (requires PESQ library)
+            if not audio_settings.get('enable-structured-diagnostics-logging'):
+                audio_settings['enable-structured-diagnostics-logging'] = True  # For Log Analytics
+
+            # Monitoring Intervals
+            if not audio_settings.get('quality-analysis-interval-seconds'):
+                audio_settings['quality-analysis-interval-seconds'] = 10  # Analyze quality every 10s
+            if not audio_settings.get('network-analysis-interval-seconds'):
+                audio_settings['network-analysis-interval-seconds'] = 5  # Analyze network every 5s
             
             # SSML Voice Control Settings
             if not audio_settings.get('ssml-enabled'):

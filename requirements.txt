@@ -20,3 +20,7 @@ typing_extensions==4.13.2
 urllib3==2.4.0
 websocket-client==1.8.0
 azure-ai-voicelive
+
+# Audio quality monitoring dependencies
+pesq==0.0.4  # PESQ MOS scoring (ITU-T P.862 compliant)
+scipy==1.11.4  # Audio resampling and signal processing

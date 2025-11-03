@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from config import ConfigManager
 from zipcode_service import ZipcodeService
 from surname_verifier import find_surname_candidates, generate_llm_prompt
+from quality_monitoring import QualityMonitoringSession
 
 from functools import lru_cache
 from time import time
@@ -131,7 +132,7 @@ AZURE_VOICE_MAP = {
 # CALL SESSION (SIMPLIFIED - NO BARGE-IN STATE)
 # ──────────────────────────────────────────────────────────────────────────────
 class CallSession:
-    def __init__(self, company_id: str, call_sid: str):
+    def __init__(self, company_id: str, call_sid: str, audio_config: Optional[Dict] = None):
         self.company_id = company_id
         self.call_sid = call_sid
         self.start_time = datetime.now(UTC)
@@ -142,15 +143,39 @@ class CallSession:
         self.ai_audio_chunks: List[bytes] = []
         self.transcript: List[Dict[str, Any]] = []
 
+        # Quality monitoring (NEW)
+        self.quality_monitoring: Optional[QualityMonitoringSession] = None
+        if audio_config:
+            try:
+                self.quality_monitoring = QualityMonitoringSession(
+                    call_id=call_sid,
+                    company_id=company_id,
+                    config=audio_config
+                )
+                logger.info(f"✅ Quality monitoring enabled for call {call_sid}")
+            except Exception as e:
+                logger.error(f"Failed to initialize quality monitoring: {e}")
+
     def add_caller_audio(self, audio_base64: str):
         try:
-            self.caller_audio_chunks.append(base64.b64decode(audio_base64))
+            audio_bytes = base64.b64decode(audio_base64)
+            self.caller_audio_chunks.append(audio_bytes)
+
+            # NEW: Analyze caller audio quality
+            if self.quality_monitoring:
+                self.quality_monitoring.analyze_audio_chunk(audio_bytes, source="caller")
+                self.quality_monitoring.record_audio_chunk_arrival(len(audio_bytes))
         except Exception as e:
             logger.error(f"Error adding caller audio: {e}")
 
     def add_ai_audio(self, audio_base64: str):
         try:
-            self.ai_audio_chunks.append(base64.b64decode(audio_base64))
+            audio_bytes = base64.b64decode(audio_base64)
+            self.ai_audio_chunks.append(audio_bytes)
+
+            # NEW: Analyze AI audio quality
+            if self.quality_monitoring:
+                self.quality_monitoring.analyze_audio_chunk(audio_bytes, source="ai")
         except Exception as e:
             logger.error(f"Error adding AI audio: {e}")
 
@@ -229,6 +254,13 @@ class SessionMonitor:
         self.errors = []
         self.last_token_warning = 0
 
+        # NEW: Turn-timing tracking for quality analysis
+        self.caller_speech_start_time = None
+        self.caller_speech_stop_time = None
+        self.ai_response_start_time = None
+        self.turn_latencies = []  # List of response gap durations in ms
+        self.turn_timestamps = []  # Detailed turn events for correlation
+
     def add_tokens(self, input_tokens: int, output_tokens: int):
         self.token_count += (input_tokens + output_tokens)
         # Audio uses ~800 tokens/minute per research
@@ -260,6 +292,70 @@ class SessionMonitor:
     def add_vad_trigger(self):
         self.vad_triggers += 1
 
+    def mark_caller_speech_start(self):
+        """Mark when caller starts speaking (VAD trigger)."""
+        self.caller_speech_start_time = datetime.now(UTC)
+        self.turn_timestamps.append({
+            'event': 'caller_speech_start',
+            'timestamp': self.caller_speech_start_time.isoformat()
+        })
+
+    def mark_caller_speech_stop(self):
+        """Mark when caller stops speaking (VAD end)."""
+        self.caller_speech_stop_time = datetime.now(UTC)
+        self.turn_timestamps.append({
+            'event': 'caller_speech_stop',
+            'timestamp': self.caller_speech_stop_time.isoformat()
+        })
+
+    def mark_ai_response_start(self, call_session=None):
+        """
+        Mark when AI starts responding.
+        Calculate and log the response gap (caller_stop -> AI_start).
+        """
+        self.ai_response_start_time = datetime.now(UTC)
+        self.turn_timestamps.append({
+            'event': 'ai_response_start',
+            'timestamp': self.ai_response_start_time.isoformat()
+        })
+
+        # Calculate response gap if we have caller stop time
+        if self.caller_speech_stop_time:
+            gap_ms = (self.ai_response_start_time - self.caller_speech_stop_time).total_seconds() * 1000
+            self.turn_latencies.append(gap_ms)
+
+            # Log based on guide thresholds
+            if gap_ms < 100:
+                logger.warning(f"⚡ INSTANT RESPONSE: {gap_ms:.0f}ms gap (sounds robotic - should be 200-500ms)")
+            elif gap_ms > 1500:
+                logger.warning(f"⏳ SLOW RESPONSE: {gap_ms:.0f}ms gap (too slow - should be 200-500ms)")
+            elif 200 <= gap_ms <= 500:
+                logger.info(f"✅ Natural response gap: {gap_ms:.0f}ms")
+            else:
+                logger.info(f"📊 Response gap: {gap_ms:.0f}ms")
+
+            # NEW: Log to quality monitoring
+            if call_session and call_session.quality_monitoring:
+                call_session.quality_monitoring.log_turn_timing(gap_ms)
+
+    def get_latency_stats(self):
+        """Get turn latency statistics."""
+        if not self.turn_latencies:
+            return None
+
+        import statistics
+        return {
+            'avg_ms': statistics.mean(self.turn_latencies),
+            'median_ms': statistics.median(self.turn_latencies),
+            'min_ms': min(self.turn_latencies),
+            'max_ms': max(self.turn_latencies),
+            'std_dev_ms': statistics.stdev(self.turn_latencies) if len(self.turn_latencies) > 1 else 0,
+            'count': len(self.turn_latencies),
+            'instant_responses': sum(1 for x in self.turn_latencies if x < 100),
+            'slow_responses': sum(1 for x in self.turn_latencies if x > 1500),
+            'natural_responses': sum(1 for x in self.turn_latencies if 200 <= x <= 500)
+        }
+
     def add_error(self, error: str):
         self.errors.append({
             'error': error,
@@ -268,7 +364,11 @@ class SessionMonitor:
 
     def log_summary(self):
         duration = (datetime.now(UTC) - self.start_time).total_seconds()
-        logger.info(f"""
+
+        # Get latency statistics
+        latency_stats = self.get_latency_stats()
+
+        summary = f"""
 📊 SESSION SUMMARY for {self.company_id}:
    Duration: {duration:.1f}s
    Turns: {self.turn_count}
@@ -276,8 +376,19 @@ class SessionMonitor:
    VAD Triggers: {self.vad_triggers}
    Function Calls: {len(self.function_calls)}
    Errors: {len(self.errors)}
-   Avg Turn Time: {duration/max(1, self.turn_count):.1f}s
-        """)
+   Avg Turn Time: {duration/max(1, self.turn_count):.1f}s"""
+
+        if latency_stats:
+            summary += f"""
+
+📈 TURN-TIMING QUALITY (Guide: 200-500ms = natural):
+   Avg Response Gap: {latency_stats['avg_ms']:.0f}ms
+   Median Gap: {latency_stats['median_ms']:.0f}ms
+   Natural Gaps (200-500ms): {latency_stats['natural_responses']}/{latency_stats['count']}
+   Instant Responses (<100ms): {latency_stats['instant_responses']} ⚠️ Too fast = robotic
+   Slow Responses (>1500ms): {latency_stats['slow_responses']} ⚠️ Too slow = awkward"""
+
+        logger.info(summary)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PROMPT BUILDER (Simplified - Instructions from Blob Storage)
@@ -948,6 +1059,7 @@ Stay focused on your current task in the call flow.""",
         if event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
             monitor.add_vad_trigger()
             monitor.add_turn()  # New turn started
+            monitor.mark_caller_speech_start()  # NEW: Track timing
 
         elif event.type == ServerEventType.ERROR:
             error_msg = getattr(event, 'error', {}).get('message', 'Unknown error') if hasattr(event, 'error') else 'Unknown error'
@@ -965,6 +1077,10 @@ Stay focused on your current task in the call flow.""",
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
         logger.info("🎤 Caller stopped speaking")
 
+        # NEW: Mark caller speech stop for timing analysis
+        if monitor:
+            monitor.mark_caller_speech_stop()
+
         # GRACE PERIOD: Wait 500ms for transcript to arrive before AI responds
         # This prevents race condition where AI responds before hearing the transcript
         # Evidence from production: transcript takes ~360ms to arrive after VAD stops
@@ -974,6 +1090,9 @@ Stay focused on your current task in the call flow.""",
 
     elif event.type == ServerEventType.RESPONSE_CREATED:
         logger.info(f"🤖 {company_name} AI responding")
+        # NEW: Mark AI response start for turn-timing analysis
+        if monitor:
+            monitor.mark_ai_response_start(call_session)
         # Reset response tracker for new response
         response_tracker.start_response()
 
@@ -1320,10 +1439,15 @@ async def send_signalwire_audio_to_voicelive(
                         caller_phone = (data.get("start") or {}).get("from")
                         media_format = (data.get("start") or {}).get("mediaFormat", {})
 
-                        # Create call session
-                        call_session = CallSession(company_id, stream_sid or "unknown")
+                        # Create call session with quality monitoring
+                        audio_config = shared_state.get("audio_settings", {})
+                        call_session = CallSession(company_id, stream_sid or "unknown", audio_config)
                         shared_state["call_session"] = call_session
                         shared_state["stream_sid"] = stream_sid
+
+                        # Start quality monitoring periodic analysis
+                        if call_session.quality_monitoring:
+                            await call_session.quality_monitoring.start_periodic_analysis()
 
                         logger.info(f"▶️ Call started for {company_name}")
                         logger.info(f"📞 Caller ID: {caller_phone}")
@@ -1446,6 +1570,12 @@ RESPONSE GUIDELINES (Apply to ALL responses):
                         if call_session:
                             try:
                                 call_session.finalize()
+
+                                # Finalize quality monitoring (must happen BEFORE save_to_storage)
+                                monitor = shared_state.get("monitor")
+                                if call_session.quality_monitoring and monitor:
+                                    await call_session.quality_monitoring.finalize(monitor)
+
                                 await call_session.save_to_storage()
                                 logger.info("✅ Call session saved successfully")
                             except Exception as e:
