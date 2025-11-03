@@ -485,8 +485,8 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
                     "properties": {
                         "zipcode": {
                             "type": "string",
-                            "description": "5-digit US ZIP code",
-                            "pattern": "^[0-9]{5}$"  # Strict validation: exactly 5 digits
+                            "description": "US ZIP or ZIP+4 (digits, optional dash/spaces). Will be normalized to 5 digits.",
+                            "pattern": "^[0-9\\s-]{5,10}$"  # Relaxed: accept ZIP+4, spaces, dashes
                         }
                     },
                     "required": ["zipcode"]
@@ -601,29 +601,40 @@ async def execute_function(function_name: str, arguments: dict) -> dict:
 
     try:
         if function_name == "lookup_zipcode":
-            zipcode = arguments.get("zipcode", "")
-            if not zipcode:
-                return {"error": "Missing zipcode parameter"}
+            raw_zipcode = arguments.get("zipcode", "") or ""
+
+            # Normalize: extract only digits, take first 5
+            digits = "".join(ch for ch in raw_zipcode if ch.isdigit())
+            zipcode5 = digits[:5] if len(digits) >= 5 else ""
+
+            logger.info(f"   ZIP tool: normalized '{raw_zipcode}' -> '{zipcode5}'")
+
+            if not zipcode5:
+                return {
+                    "found": False,
+                    "zipcode": raw_zipcode,
+                    "message": "Invalid ZIP. Please ask for five digits."
+                }
 
             # Use existing zipcode service (includes zipcode_spoken for clear pronunciation)
-            result = zipcode_service.lookup(zipcode)
+            result = zipcode_service.lookup(zipcode5)
 
             if result:
                 logger.info(f"   ZIP lookup success: {result['city']}, {result['state']}")
                 return {
                     "found": True,
-                    "zipcode": zipcode,
-                    "zipcode_spoken": result.get('zipcode_spoken', zipcode),  # Speech-formatted ZIP
+                    "zipcode": zipcode5,
+                    "zipcode_spoken": result.get('zipcode_spoken', zipcode5),  # Speech-formatted ZIP
                     "city": result['city'],
                     "state": result['state'],
                     "message": f"{result['city']}, {result['state']}"
                 }
             else:
-                logger.warning(f"   ZIP code {zipcode} not found")
+                logger.warning(f"   ZIP code {zipcode5} not found")
                 return {
                     "found": False,
-                    "zipcode": zipcode,
-                    "message": "ZIP code not found. Please ask customer to verify."
+                    "zipcode": zipcode5,
+                    "message": "ZIP code not found. Please verify."
                 }
 
         elif function_name == "transfer_window_check":
@@ -1037,7 +1048,7 @@ async def handle_voicelive_event(
                     if hasattr(voicelive_connection, 'response'):
                         asyncio.create_task(
                             voicelive_connection.response.create(
-                                instructions="""RECOVERY MODE: Invalid response detected.
+                                additional_instructions="""RECOVERY MODE: Invalid response detected.
 
 The caller just provided information. Continue collecting the next required field naturally.
 Do NOT repeat what they just said. Move directly to the next question in your workflow.
@@ -1078,7 +1089,7 @@ If you were collecting phone/email/address, continue to the next field.""",
                     if hasattr(voicelive_connection, 'response'):
                         asyncio.create_task(
                             voicelive_connection.response.create(
-                                instructions="""RECOVERY MODE: Invalid response detected.
+                                additional_instructions="""RECOVERY MODE: Invalid response detected.
 
 The caller just provided information. Continue collecting the next required field naturally.
 Do NOT repeat what they just said. Move directly to the next question in your workflow.
@@ -1122,7 +1133,7 @@ If you were collecting phone/email/address, continue to the next field.""",
                         # Trigger a new response with instructions to continue naturally
                         asyncio.create_task(
                             voicelive_connection.response.create(
-                                instructions="""RECOVERY MODE: You just attempted to generate an invalid response.
+                                additional_instructions="""RECOVERY MODE: You just attempted to generate an invalid response.
 
 The caller may have made a side comment or conversational aside.
 Please continue collecting the information you need naturally.
