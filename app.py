@@ -422,19 +422,24 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info(f"   Voice properties: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}")
 
         # Configure Semantic VAD using settings from Azure App Configuration
+        enable_barge_in = audio_settings.get('enable-barge-in', True)
         vad_threshold = audio_settings.get('vad-threshold', 0.3)
         vad_prefix_padding_ms = audio_settings.get('vad-prefix-padding-ms', 300)
         vad_silence_duration_ms = audio_settings.get('vad-silence-duration-ms', 500)
         remove_filler_words = audio_settings.get('remove-filler-words', False)
 
-        turn_detection_config = AzureSemanticVad(
-            threshold=vad_threshold,
-            prefix_padding_ms=vad_prefix_padding_ms,
-            silence_duration_ms=vad_silence_duration_ms,
-            remove_filler_words=remove_filler_words
-            # NOTE: end_of_utterance_detection is NOT supported by AzureSemanticVad
-        )
-        logger.info(f"✅ Semantic VAD ENABLED (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words})")
+        if enable_barge_in:
+            turn_detection_config = AzureSemanticVad(
+                threshold=vad_threshold,
+                prefix_padding_ms=vad_prefix_padding_ms,
+                silence_duration_ms=vad_silence_duration_ms,
+                remove_filler_words=remove_filler_words
+                # NOTE: end_of_utterance_detection is NOT supported by AzureSemanticVad
+            )
+            logger.info(f"✅ Barge-in ENABLED - Semantic VAD (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words})")
+        else:
+            turn_detection_config = None
+            logger.info(f"⚠️ Barge-in DISABLED - Callers cannot interrupt agent")
 
         # Configure noise suppression
         noise_reduction = None
@@ -526,7 +531,10 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
         logger.info(f"   Voice: {azure_voice_name} (Azure HD Neural TTS)")
         logger.info(f"   Voice Config: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}")
-        logger.info(f"   VAD: Semantic (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words})")
+        if enable_barge_in:
+            logger.info(f"   Barge-in: ENABLED - VAD (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words})")
+        else:
+            logger.info(f"   Barge-in: DISABLED - Agent completes responses without interruption")
         logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.7)}, max_tokens={audio_settings.get('max-response-tokens', 200)}")
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}")
         logger.info("=" * 80)
