@@ -373,13 +373,13 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             name=azure_voice_name,  # Uses HD voice
             type="azure-standard",
             rate="1.0",  # Normal speed
-            pitch="+15%",  # Higher pitch for warmer, friendlier tone (was +5%)
+            pitch="+0%",  # Natural pitch (was +15%, too nasally)
             volume="+10%",  # Slightly louder for clarity
             style="customerservice"  # Professional, helpful tone
             # NOTE: style_degree and temperature are NOT supported by AzureStandardVoice in the current SDK
         )
 
-        logger.info(f"   Voice properties: rate=1.0, pitch=+15%, volume=+10%, style=customerservice")
+        logger.info(f"   Voice properties: rate=1.0, pitch=+0%, volume=+10%, style=customerservice")
 
         # Configure Semantic VAD for optimal conversation
         # More sensitive configuration to better detect caller speech
@@ -1163,7 +1163,7 @@ Stay focused on your current task in the call flow.""",
                         context_prompt = (
                             f"SYSTEM: ZIP code lookup successful. "
                             f"ZIP: {zipcode_spoken} is in {city}, {state}. "
-                            f"Confirm this with the caller naturally."
+                            f"Move to next question."
                         )
                     else:
                         context_prompt = f"SYSTEM: Function '{function_name}' returned: {result_json}"
@@ -1269,7 +1269,7 @@ Stay focused on your current task in the call flow.""",
                                     context_prompt = (
                                         f"SYSTEM: ZIP code lookup successful. "
                                         f"ZIP: {zipcode_spoken} is in {city}, {state}. "
-                                        f"Confirm this with the caller naturally."
+                                        f"Move to next question."
                                     )
                                 else:
                                     context_prompt = f"SYSTEM: Function '{function_name}' returned: {result_json}"
@@ -1458,9 +1458,10 @@ RESPONSE GUIDELINES (Apply to ALL responses):
 - Keep responses to 2-3 sentences maximum - be concise
 - For phone numbers and addresses, say each digit with slight pauses
 - Show warmth through acknowledgment: "I can definitely help with that"
-- Avoid repetitive "thank you" - use variety: "Got it," "Perfect," "Okay," "I have that"
+- DON'T repeat information back unless asked - no "Thank you, Smith" or "Got it, 703..."
+- Move directly to the next question after receiving info
 - Speak slightly slower and clearer for elderly customers
-- Don't confirm every field after collection - save confirmation for the end"""
+- Only confirm information at the very end of the call, not after each field"""
 
                         logger.info(f"📤 Enhanced call context with response guidelines")
 
