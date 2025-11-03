@@ -872,10 +872,12 @@ async def handle_voicelive_event(
             # Filter out invalid tokens from transcript (especially <|audio_text|>)
             INVALID_TOKENS = {"<|audio_text|>", "<|end_of_text|>", "null", ""}
             if transcript_text.strip() not in INVALID_TOKENS and "<|audio_text|>" not in transcript_text:
-                logger.info(f"📝 USER TRANSCRIPT: {transcript_text}")
+                # Note: This could be user OR assistant transcript depending on event type
+                logger.info(f"📝 TRANSCRIPT: {transcript_text}")
             else:
-                logger.warning(f"🚫 FILTERED INVALID TOKEN FROM TRANSCRIPT: '{transcript_text}'")
-                # Mark response tracker to suppress audio for this response
+                logger.warning(f"🚫 INVALID TOKEN IN TRANSCRIPT: '{transcript_text}' - SUPPRESSING ALL AUDIO")
+                # CRITICAL: Mark response tracker to suppress ALL audio for this response
+                # This prevents "<|audio_text|>" from being spoken as "audio underscore text"
                 response_tracker.mark_invalid_token()
 
     # Log AI response text and filter invalid tokens
@@ -1001,10 +1003,17 @@ Stay focused on your current task in the call flow.""",
         if not audio_bytes:
             return
 
-        # Check if we should suppress this audio (invalid token detected in transcript)
+        # CRITICAL: Check if we should suppress this audio (invalid token detected)
+        # This prevents "<|audio_text|>" from being spoken out loud
         if response_tracker.has_invalid_token:
             response_tracker.suppress_audio()
-            logger.debug("🚫 Suppressing audio chunk (invalid token detected)")
+            logger.warning("🚫 SUPPRESSING AUDIO CHUNK - Invalid token detected (preventing 'audio underscore text' speech)")
+            return
+
+        # Additional safety check: If this is string data instead of bytes, it's likely a token
+        if isinstance(audio_bytes, str):
+            logger.warning(f"🚫 SUPPRESSING STRING AUDIO DATA: '{audio_bytes}' (expected bytes)")
+            response_tracker.mark_invalid_token()
             return
 
         # Convert bytes to base64 for SignalWire
