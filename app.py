@@ -402,30 +402,39 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             azure_voice_name = "en-US-FableTurboMultilingualNeural"
             logger.warning(f"⚠️ Voice '{voice_name}' not recognized, using default: {azure_voice_name}")
 
-        # Configure Azure HD TTS voice
-        # Optimized for clarity and natural conversation
+        # Configure Azure HD TTS voice using settings from Azure App Configuration
+        # Get voice synthesis settings from audio_settings
+        voice_rate = audio_settings.get('voice-rate', '1.0')
+        voice_pitch = audio_settings.get('voice-pitch', '+0%')
+        voice_volume = audio_settings.get('voice-volume', '+10%')
+        voice_style = audio_settings.get('voice-style', 'friendly')
+
         voice_config = AzureStandardVoice(
             name=azure_voice_name,  # Uses HD voice
             type="azure-standard",
-            rate="1.0",  # Normal speed
-            pitch="+0%",  # Natural pitch (was +15%, too nasally)
-            volume="+10%",  # Slightly louder for clarity
-            style="friendly"  # Warm, approachable tone for natural conversation
+            rate=voice_rate,
+            pitch=voice_pitch,
+            volume=voice_volume,
+            style=voice_style
             # NOTE: style_degree and temperature are NOT supported by AzureStandardVoice in the current SDK
         )
 
-        logger.info(f"   Voice properties: rate=1.0, pitch=+0%, volume=+10%, style=friendly")
+        logger.info(f"   Voice properties: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}")
 
-        # Configure Semantic VAD for optimal conversation
-        # More sensitive configuration to better detect caller speech
+        # Configure Semantic VAD using settings from Azure App Configuration
+        vad_threshold = audio_settings.get('vad-threshold', 0.3)
+        vad_prefix_padding_ms = audio_settings.get('vad-prefix-padding-ms', 300)
+        vad_silence_duration_ms = audio_settings.get('vad-silence-duration-ms', 500)
+        remove_filler_words = audio_settings.get('remove-filler-words', False)
+
         turn_detection_config = AzureSemanticVad(
-            threshold=0.2,  # MORE sensitive to detect quieter caller speech (was 0.3)
-            prefix_padding_ms=400,  # Capture more of speech start (was 300ms)
-            silence_duration_ms=500,  # Balanced - responsive but not too quick
-            remove_filler_words=False  # KEEP customer's natural speech
+            threshold=vad_threshold,
+            prefix_padding_ms=vad_prefix_padding_ms,
+            silence_duration_ms=vad_silence_duration_ms,
+            remove_filler_words=remove_filler_words
             # NOTE: end_of_utterance_detection is NOT supported by AzureSemanticVad
         )
-        logger.info(f"✅ Semantic VAD ENABLED (threshold=0.2, prefix_padding=400ms, silence=500ms)")
+        logger.info(f"✅ Semantic VAD ENABLED (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words})")
 
         # Configure noise suppression
         noise_reduction = None
@@ -516,8 +525,8 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info("=" * 80)
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
         logger.info(f"   Voice: {azure_voice_name} (Azure HD Neural TTS)")
-        logger.info(f"   Voice Config: rate=1.0, pitch=+15%, volume=+10%, style=customerservice")
-        logger.info(f"   VAD: Semantic (threshold=0.2, prefix_padding=400ms, silence=500ms)")
+        logger.info(f"   Voice Config: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}")
+        logger.info(f"   VAD: Semantic (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words})")
         logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.7)}, max_tokens={audio_settings.get('max-response-tokens', 200)}")
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}")
         logger.info("=" * 80)
