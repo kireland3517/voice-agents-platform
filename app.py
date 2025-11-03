@@ -808,19 +808,25 @@ class ResponseTracker:
     def __init__(self):
         self.current_response_has_text = False
         self.suppressed_audio_count = 0
+        self.has_invalid_token = False  # NEW: Track if response contains invalid token
 
     def start_response(self):
         """Reset for new response"""
         self.current_response_has_text = False
         self.suppressed_audio_count = 0
+        self.has_invalid_token = False  # Reset invalid token flag
 
     def mark_text_received(self):
         """Mark that text was received for current response"""
         self.current_response_has_text = True
 
+    def mark_invalid_token(self):
+        """Mark that response contains invalid token (should suppress all audio)"""
+        self.has_invalid_token = True
+
     def should_forward_audio(self) -> bool:
-        """Return True if audio should be forwarded (has accompanying text)"""
-        return self.current_response_has_text
+        """Return True if audio should be forwarded (has text and no invalid tokens)"""
+        return self.current_response_has_text and not self.has_invalid_token
 
     def suppress_audio(self):
         """Count a suppressed audio chunk"""
@@ -828,8 +834,10 @@ class ResponseTracker:
 
     def log_suppression(self):
         """Log if audio was suppressed"""
-        if not self.current_response_has_text and self.suppressed_audio_count > 0:
-            logger.warning(f"⚠️ Suppressed {self.suppressed_audio_count} audio-only chunks (likely <|audio_text|> token)")
+        if self.has_invalid_token and self.suppressed_audio_count > 0:
+            logger.warning(f"⚠️ Suppressed {self.suppressed_audio_count} audio chunks containing invalid <|audio_text|> token")
+        elif not self.current_response_has_text and self.suppressed_audio_count > 0:
+            logger.warning(f"⚠️ Suppressed {self.suppressed_audio_count} audio-only chunks (no text)")
 
 # Global response tracker instance
 response_tracker = ResponseTracker()
@@ -867,6 +875,8 @@ async def handle_voicelive_event(
                 logger.info(f"📝 USER TRANSCRIPT: {transcript_text}")
             else:
                 logger.warning(f"🚫 FILTERED INVALID TOKEN FROM TRANSCRIPT: '{transcript_text}'")
+                # Mark response tracker to suppress audio for this response
+                response_tracker.mark_invalid_token()
 
     # Log AI response text and filter invalid tokens
     if 'text' in event_type_str.lower() and 'delta' in event_type_str.lower():
@@ -991,12 +1001,11 @@ Stay focused on your current task in the call flow.""",
         if not audio_bytes:
             return
 
-        # DISABLED: Audio suppression was too aggressive - causing Cedar not to speak
-        # The audio_text token issue should be handled by the instructions instead
-        # if not response_tracker.should_forward_audio():
-        #     response_tracker.suppress_audio()
-        #     logger.debug("🚫 Suppressing audio-only chunk (no text received)")
-        #     return
+        # Check if we should suppress this audio (invalid token detected in transcript)
+        if response_tracker.has_invalid_token:
+            response_tracker.suppress_audio()
+            logger.debug("🚫 Suppressing audio chunk (invalid token detected)")
+            return
 
         # Convert bytes to base64 for SignalWire
         audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
