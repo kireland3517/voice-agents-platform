@@ -1175,11 +1175,9 @@ Stay focused on your current task in the call flow.""",
                     # Create a function call output item
                     if hasattr(conversation, 'item'):
                         await conversation.item.create(
-                            item={
-                                "type": "function_call_output",
-                                "call_id": call_id,
-                                "output": result_json
-                            }
+                            type="function_call_output",
+                            call_id=call_id,
+                            output=result_json
                         )
                         logger.info("✅ Function result sent via conversation.item.create()")
                     else:
@@ -1203,7 +1201,7 @@ Stay focused on your current task in the call flow.""",
                         context_prompt = (
                             f"SYSTEM: ZIP code lookup successful. "
                             f"ZIP: {zipcode_spoken} is in {city}, {state}. "
-                            f"Move to next question."
+                            f"Confirm this location naturally: 'Okay, so you're in {city}, {state}. What's your street address?'"
                         )
                     else:
                         context_prompt = f"SYSTEM: Function '{function_name}' returned: {result_json}"
