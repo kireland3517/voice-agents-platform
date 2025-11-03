@@ -385,12 +385,12 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         # Balanced configuration for clear turn-taking
         turn_detection_config = AzureSemanticVad(
             threshold=0.3,  # More sensitive to detect caller speech
-            prefix_padding_ms=500,  # Extra padding to catch brief responses like "yes" (was 300ms)
-            silence_duration_ms=700,  # Longer pause before cutting off (was 500ms, helps with brief confirmations)
+            prefix_padding_ms=300,  # Standard padding (reverted from 500ms - was too slow)
+            silence_duration_ms=500,  # Balanced - responsive but not too quick (reverted from 700ms)
             remove_filler_words=False  # KEEP customer's natural speech
             # NOTE: end_of_utterance_detection is NOT supported by AzureSemanticVad
         )
-        logger.info(f"✅ Semantic VAD ENABLED (threshold=0.3, prefix_padding=500ms, silence=700ms)")
+        logger.info(f"✅ Semantic VAD ENABLED (threshold=0.3, prefix_padding=300ms, silence=500ms)")
 
         # Configure noise suppression
         noise_reduction = None
@@ -482,7 +482,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
         logger.info(f"   Voice: {azure_voice_name} (Azure HD Neural TTS)")
         logger.info(f"   Voice Config: rate=1.0, pitch=+5%, volume=+10%, style=customerservice")
-        logger.info(f"   VAD: Semantic (threshold=0.3, prefix_padding=500ms, silence=700ms)")
+        logger.info(f"   VAD: Semantic (threshold=0.3, prefix_padding=300ms, silence=500ms)")
         logger.info(f"   LLM: temp={audio_settings.get('temperature', 0.7)}, max_tokens={audio_settings.get('max-response-tokens', 200)}")
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}")
         logger.info("=" * 80)
