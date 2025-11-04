@@ -104,6 +104,7 @@ VOICE_MAP = {
     'sage': 'sage',
     'verse': 'verse',
     'cedar': 'cedar',
+    'luna': 'luna',
 }
 
 # Azure TTS voice mappings for Voice Live API (600+ voices supported)
