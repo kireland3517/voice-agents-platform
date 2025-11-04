@@ -117,7 +117,7 @@ AZURE_VOICE_MAP = {
     'echo': 'en-US-GuyNeural',               # Professional male voice
     'ash': 'en-US-EmmaNeural',               # Clear, articulate female voice
     'ballad': 'en-US-DavisNeural',           # Conversational male voice
-    'coral': 'en-US-Ava:DragonHDLatestNeural',  # HD quality warm, professional female voice with temperature support
+    'coral': 'en-US-AvaNeural',  # Warm, professional female voice (standard neural)
     'sage': 'en-US-BrianNeural',             # Clear, professional male voice
     'verse': 'en-US-AriaNeural',             # Friendly, expressive female voice
     'cedar': 'en-US-Andrew:DragonHDLatestNeural',  # HD quality warm, natural male voice with temperature support
