@@ -1056,9 +1056,7 @@ async def handle_voicelive_event(
 The caller just provided information. Continue collecting the next required field naturally.
 Do NOT repeat what they just said. Move directly to the next question in your workflow.
 
-If you were collecting phone/email/address, continue to the next field.""",
-                                temperature=0.7,
-                                max_tokens=150
+If you were collecting phone/email/address, continue to the next field."""
                             )
                         )
                         logger.info("✅ Recovery response triggered for invalid transcript token")
@@ -1097,9 +1095,7 @@ If you were collecting phone/email/address, continue to the next field.""",
 The caller just provided information. Continue collecting the next required field naturally.
 Do NOT repeat what they just said. Move directly to the next question in your workflow.
 
-If you were collecting phone/email/address, continue to the next field.""",
-                                temperature=0.7,
-                                max_tokens=150
+If you were collecting phone/email/address, continue to the next field."""
                             )
                         )
                         logger.info("✅ Recovery response triggered for invalid transcript.done token")
@@ -1144,9 +1140,7 @@ Please continue collecting the information you need naturally.
 If you just asked for information (phone, address, etc.), politely say:
 "I want to make sure I get that correctly - could you repeat that for me?"
 
-Stay focused on your current task in the call flow.""",
-                                temperature=0.7,
-                                max_tokens=150
+Stay focused on your current task in the call flow."""
                             )
                         )
                         logger.info("✅ Recovery response triggered for invalid token")
