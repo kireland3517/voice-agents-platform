@@ -329,7 +329,8 @@ def build_company_instructions(company_config):
 
     voice_config = company_config.get('voice-config', {})
     voice_style = voice_config.get('voice-style', 'alloy')
-    openai_voice = VOICE_MAP.get(voice_style.lower(), 'alloy')
+    # Pass through voice_style directly - will be mapped to Azure voice in create_voicelive_connection
+    openai_voice = voice_style
 
     detailed_instructions = company_config.get('detailed-instructions')
 
