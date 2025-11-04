@@ -120,6 +120,7 @@ AZURE_VOICE_MAP = {
     'sage': 'en-US-BrianNeural',             # Clear, professional male voice
     'verse': 'en-US-AriaNeural',             # Friendly, expressive female voice
     'cedar': 'en-US-Andrew:DragonHDLatestNeural',  # HD quality warm, natural male voice with temperature support
+    'luna': 'en-US-LunaNeural',              # Conversational female voice
 
     # Additional popular voices for quick access
     'jenny-multilingual': 'en-US-JennyMultilingualNeural',
