@@ -550,8 +550,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         # Log final configuration
         logger.info("=" * 80)
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
-        logger.info(f"   Voice: {azure_voice_name} (Azure HD Neural TTS)")
-        logger.info(f"   Voice Config: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}")
+        logger.info(f"   Voice: {azure_voice_name}")
         if enable_barge_in:
             logger.info(f"   Barge-in: ENABLED - VAD (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words})")
         else:
