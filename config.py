@@ -51,9 +51,9 @@ class ConfigManager:
             return None
         
         try:
-            # UPDATED: Use cedar_instructions_realtime_v2_improved.md (production-ready optimized version)
+            # UPDATED: Use sarah_instructions_senior_life.md for Sarah voice agent
             if company_id == "senior-life":
-                blob_name = "cedar_instructions_realtime_v2_improved.md"
+                blob_name = "sarah_instructions_senior_life.md"
             else:
                 # Fallback pattern for other companies
                 blob_name = f"{company_id}-instructions.txt"
