@@ -117,7 +117,7 @@ AZURE_VOICE_MAP = {
     'echo': 'en-US-GuyNeural',               # Professional male voice
     'ash': 'en-US-EmmaNeural',               # Clear, articulate female voice
     'ballad': 'en-US-DavisNeural',           # Conversational male voice
-    'coral': 'en-US-AvaNeural',  # Warm, professional female voice (standard neural)
+    'coral': 'en-US-Ava:DragonHDLatestNeural',  # HD quality warm, professional female voice
     'sage': 'en-US-BrianNeural',             # Clear, professional male voice
     'verse': 'en-US-AriaNeural',             # Friendly, expressive female voice
     'cedar': 'en-US-Andrew:DragonHDLatestNeural',  # HD quality warm, natural male voice with temperature support
@@ -405,24 +405,42 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             azure_voice_name = "en-US-FableTurboMultilingualNeural"
             logger.warning(f"⚠️ Voice '{voice_name}' not recognized, using default: {azure_voice_name}")
 
-        # Configure Azure HD TTS voice using settings from Azure App Configuration
-        # Get voice synthesis settings from audio_settings
-        voice_rate = audio_settings.get('voice-rate', '1.0')
-        voice_pitch = audio_settings.get('voice-pitch', '+0%')
-        voice_volume = audio_settings.get('voice-volume', '+10%')
-        voice_style = audio_settings.get('voice-style', 'friendly')
+        # Configure Azure TTS voice using settings from Azure App Configuration
+        # HD voices (DragonHDLatestNeural) support ONLY temperature and rate parameters
+        # Standard neural voices support rate, pitch, volume, and style parameters
+        # Source: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/voice-live-how-to
 
-        voice_config = AzureStandardVoice(
-            name=azure_voice_name,  # Uses HD voice
-            type="azure-standard",
-            rate=voice_rate,
-            pitch=voice_pitch,
-            volume=voice_volume,
-            style=voice_style
-            # NOTE: style_degree and temperature are NOT supported by AzureStandardVoice in the current SDK
-        )
+        is_hd_voice = ":DragonHD" in azure_voice_name
 
-        logger.info(f"   Voice properties: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}")
+        if is_hd_voice:
+            # HD voices: Only temperature and rate supported (per Voice Live API docs Oct 31, 2025)
+            voice_temperature = float(audio_settings.get('voice-temperature', 0.8))
+            voice_rate = audio_settings.get('voice-rate', '1.0')
+
+            voice_config = AzureStandardVoice(
+                name=azure_voice_name,
+                type="azure-standard",
+                temperature=voice_temperature,
+                rate=voice_rate
+            )
+            logger.info(f"   HD Voice Config: temperature={voice_temperature}, rate={voice_rate}")
+            logger.info(f"   Note: pitch, volume, and style are NOT supported for HD voices")
+        else:
+            # Standard voices: Full parameter support
+            voice_rate = audio_settings.get('voice-rate', '1.0')
+            voice_pitch = audio_settings.get('voice-pitch', '+0%')
+            voice_volume = audio_settings.get('voice-volume', '+10%')
+            voice_style = audio_settings.get('voice-style', 'friendly')
+
+            voice_config = AzureStandardVoice(
+                name=azure_voice_name,
+                type="azure-standard",
+                rate=voice_rate,
+                pitch=voice_pitch,
+                volume=voice_volume,
+                style=voice_style
+            )
+            logger.info(f"   Standard Voice Config: rate={voice_rate}, pitch={voice_pitch}, volume={voice_volume}, style={voice_style}")
 
         # Configure Semantic VAD using settings from Azure App Configuration
         enable_barge_in = audio_settings.get('enable-barge-in', True)
