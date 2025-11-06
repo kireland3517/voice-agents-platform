@@ -10,3 +10,4 @@ venv/
 *_output.txt
 latest-call-*.wav
 latest-call-*.json
+nul
