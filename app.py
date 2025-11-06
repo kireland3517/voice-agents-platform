@@ -1350,26 +1350,20 @@ Stay focused on your current task in the call flow."""
                     }
                 }
 
-                logger.info("📤 Sending function result via raw WebSocket bypass...")
+                logger.info("📤 Sending function result via SDK send method...")
 
-                # Send directly via the WebSocket connection
-                # Try multiple attribute names to support different SDK versions
-                ws = None
-                for attr_name in ['_ws', 'ws', '_websocket', 'websocket']:
-                    if hasattr(voicelive_connection, attr_name):
-                        ws = getattr(voicelive_connection, attr_name)
-                        if ws:
-                            logger.debug(f"Found WebSocket at attribute: {attr_name}")
-                            break
-
-                if not ws:
+                # Use the SDK's send method directly (available in connection object)
+                if hasattr(voicelive_connection, 'send'):
+                    await voicelive_connection.send(json.dumps(raw_message))
+                    logger.info("✅ Function result sent via connection.send()")
+                elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
+                    await voicelive_connection._connection.send(json.dumps(raw_message))
+                    logger.info("✅ Function result sent via _connection.send()")
+                else:
                     # Log available attributes for debugging
                     attrs = [a for a in dir(voicelive_connection) if not a.startswith('__')]
-                    logger.warning(f"⚠️ No WebSocket attribute found. Available: {attrs[:10]}")
-                    raise AttributeError("Cannot access WebSocket - no _ws/ws attribute found")
-
-                await ws.send(json.dumps(raw_message))
-                logger.info("✅ Function result sent via raw WebSocket")
+                    logger.error(f"⚠️ No send method found. Available: {attrs[:15]}")
+                    raise AttributeError("Cannot access send method on connection")
 
                 # Trigger the next response so AI can speak the result
                 if hasattr(voicelive_connection, 'response'):
@@ -1441,24 +1435,20 @@ Stay focused on your current task in the call flow."""
                                 }
                             }
 
-                            logger.info("📤 Sending function result via raw WebSocket bypass (Method 2)...")
+                            logger.info("📤 Sending function result via SDK send method (Method 2)...")
 
-                            # Send directly via the WebSocket connection
-                            ws = None
-                            for attr_name in ['_ws', 'ws', '_websocket', 'websocket']:
-                                if hasattr(voicelive_connection, attr_name):
-                                    ws = getattr(voicelive_connection, attr_name)
-                                    if ws:
-                                        logger.debug(f"Found WebSocket at attribute: {attr_name}")
-                                        break
-
-                            if not ws:
+                            # Use the SDK's send method directly (available in connection object)
+                            if hasattr(voicelive_connection, 'send'):
+                                await voicelive_connection.send(json.dumps(raw_message))
+                                logger.info("✅ Function result sent via connection.send() (Method 2)")
+                            elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
+                                await voicelive_connection._connection.send(json.dumps(raw_message))
+                                logger.info("✅ Function result sent via _connection.send() (Method 2)")
+                            else:
+                                # Log available attributes for debugging
                                 attrs = [a for a in dir(voicelive_connection) if not a.startswith('__')]
-                                logger.warning(f"⚠️ No WebSocket attribute found. Available: {attrs[:10]}")
-                                raise AttributeError("Cannot access WebSocket - no _ws/ws attribute found")
-
-                            await ws.send(json.dumps(raw_message))
-                            logger.info("✅ Function result sent via raw WebSocket (Method 2)")
+                                logger.error(f"⚠️ No send method found. Available: {attrs[:15]}")
+                                raise AttributeError("Cannot access send method on connection")
 
                             # Trigger the next response so AI can speak the result
                             if hasattr(voicelive_connection, 'response'):
