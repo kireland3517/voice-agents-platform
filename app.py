@@ -1336,62 +1336,49 @@ Stay focused on your current task in the call flow."""
             result = await execute_function(function_name, arguments)
             logger.info(f"   Function result: {result}")
 
-            # Use the documented SDK API instead of internal WebSocket bypass
+            # Use raw WebSocket bypass (SDK conversation.item.create doesn't work)
+            result_json = json.dumps(result)
+
             try:
-                # Method 1: Try using conversation.item.create (if available)
-                logger.info("📤 Sending function result using documented SDK API...")
+                # Build the raw message format (bypassing SDK)
+                raw_message = {
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": result_json
+                    }
+                }
 
-                # The result must be a JSON string
-                result_json = json.dumps(result)
+                logger.info("📤 Sending function result via raw WebSocket bypass...")
 
-                # Check if connection has conversation.item.create method
-                if hasattr(voicelive_connection, 'conversation'):
-                    conversation = voicelive_connection.conversation
+                # Send directly via the WebSocket connection
+                # Try multiple attribute names to support different SDK versions
+                ws = None
+                for attr_name in ['_ws', 'ws', '_websocket', 'websocket']:
+                    if hasattr(voicelive_connection, attr_name):
+                        ws = getattr(voicelive_connection, attr_name)
+                        if ws:
+                            logger.debug(f"Found WebSocket at attribute: {attr_name}")
+                            break
 
-                    # Create a function call output item
-                    if hasattr(conversation, 'item'):
-                        await conversation.item.create(
-                            type="function_call_output",
-                            call_id=call_id,
-                            output=result_json
-                        )
-                        logger.info("✅ Function result sent via conversation.item.create()")
-                    else:
-                        raise AttributeError("conversation.item not available")
+                if not ws:
+                    # Log available attributes for debugging
+                    attrs = [a for a in dir(voicelive_connection) if not a.startswith('__')]
+                    logger.warning(f"⚠️ No WebSocket attribute found. Available: {attrs[:10]}")
+                    raise AttributeError("Cannot access WebSocket - no _ws/ws attribute found")
 
-                    # Trigger the next response so AI can speak the result
-                    if hasattr(voicelive_connection, 'response'):
-                        await voicelive_connection.response.create()
-                        logger.info("✅ Triggered response.create() to continue conversation")
+                await ws.send(json.dumps(raw_message))
+                logger.info("✅ Function result sent via raw WebSocket")
 
-                elif hasattr(voicelive_connection, 'response'):
-                    # Method 2: Fallback - inject result via additional_instructions
-                    logger.warning("⚠️ conversation.item not available, using fallback method")
-
-                    # Build context message with the function result
-                    if function_name == "lookup_zipcode":
-                        city = result.get('city', 'Unknown')
-                        state = result.get('state', 'Unknown')
-                        zipcode_spoken = result.get('zipcode_spoken', result.get('zipcode', ''))
-
-                        context_prompt = (
-                            f"SYSTEM: ZIP code lookup successful. "
-                            f"ZIP: {zipcode_spoken} is in {city}, {state}. "
-                            f"Confirm this location naturally: 'Okay, so you're in {city}, {state}. What's your street address?'"
-                        )
-                    else:
-                        context_prompt = f"SYSTEM: Function '{function_name}' returned: {result_json}"
-
-                    await voicelive_connection.response.create(
-                        additional_instructions=context_prompt
-                    )
-                    logger.info("✅ Function result injected via additional_instructions fallback")
-                else:
-                    raise AttributeError("Neither conversation nor response objects available on connection")
+                # Trigger the next response so AI can speak the result
+                if hasattr(voicelive_connection, 'response'):
+                    await voicelive_connection.response.create()
+                    logger.info("✅ Triggered response.create() to continue conversation")
 
             except Exception as e:
-                # If the SDK method fails, use recovery prompt
-                logger.error(f"❌ FAILED TO SEND FUNCTION RESULT: {e}")
+                # WebSocket bypass failed
+                logger.error(f"❌ WebSocket bypass failed: {e}")
                 logger.error(traceback.format_exc())
 
                 try:
@@ -1440,64 +1427,47 @@ Stay focused on your current task in the call flow."""
                         result = await execute_function(function_name, arguments)
                         logger.info(f"   Function result: {result}")
 
-                        # Use the documented SDK API instead of internal WebSocket bypass
+                        # Use raw WebSocket bypass (SDK conversation.item.create doesn't work)
+                        result_json = json.dumps(result)
+
                         try:
-                            # Method 1: Try using conversation.item.create (if available)
-                            logger.info("📤 Sending function result using documented SDK API (Method 2)...")
+                            # Build the raw message format (bypassing SDK)
+                            raw_message = {
+                                "type": "conversation.item.create",
+                                "item": {
+                                    "type": "function_call_output",
+                                    "call_id": call_id,
+                                    "output": result_json
+                                }
+                            }
 
-                            # The result must be a JSON string
-                            result_json = json.dumps(result)
+                            logger.info("📤 Sending function result via raw WebSocket bypass (Method 2)...")
 
-                            # Check if connection has conversation.item.create method
-                            if hasattr(voicelive_connection, 'conversation'):
-                                conversation = voicelive_connection.conversation
+                            # Send directly via the WebSocket connection
+                            ws = None
+                            for attr_name in ['_ws', 'ws', '_websocket', 'websocket']:
+                                if hasattr(voicelive_connection, attr_name):
+                                    ws = getattr(voicelive_connection, attr_name)
+                                    if ws:
+                                        logger.debug(f"Found WebSocket at attribute: {attr_name}")
+                                        break
 
-                                # Create a function call output item
-                                if hasattr(conversation, 'item'):
-                                    await conversation.item.create(
-                                        item={
-                                            "type": "function_call_output",
-                                            "call_id": call_id,
-                                            "output": result_json
-                                        }
-                                    )
-                                    logger.info("✅ Function result sent via conversation.item.create() (Method 2)")
-                                else:
-                                    raise AttributeError("conversation.item not available")
+                            if not ws:
+                                attrs = [a for a in dir(voicelive_connection) if not a.startswith('__')]
+                                logger.warning(f"⚠️ No WebSocket attribute found. Available: {attrs[:10]}")
+                                raise AttributeError("Cannot access WebSocket - no _ws/ws attribute found")
 
-                                # Trigger the next response so AI can speak the result
-                                if hasattr(voicelive_connection, 'response'):
-                                    await voicelive_connection.response.create()
-                                    logger.info("✅ Triggered response.create() to continue conversation (Method 2)")
+                            await ws.send(json.dumps(raw_message))
+                            logger.info("✅ Function result sent via raw WebSocket (Method 2)")
 
-                            elif hasattr(voicelive_connection, 'response'):
-                                # Method 2: Fallback - inject result via additional_instructions
-                                logger.warning("⚠️ conversation.item not available, using fallback method (Method 2)")
-
-                                # Build context message with the function result
-                                if function_name == "lookup_zipcode":
-                                    city = result.get('city', 'Unknown')
-                                    state = result.get('state', 'Unknown')
-                                    zipcode_spoken = result.get('zipcode_spoken', result.get('zipcode', ''))
-
-                                    context_prompt = (
-                                        f"SYSTEM: ZIP code lookup successful. "
-                                        f"ZIP: {zipcode_spoken} is in {city}, {state}. "
-                                        f"Move to next question."
-                                    )
-                                else:
-                                    context_prompt = f"SYSTEM: Function '{function_name}' returned: {result_json}"
-
-                                await voicelive_connection.response.create(
-                                    additional_instructions=context_prompt
-                                )
-                                logger.info("✅ Function result injected via additional_instructions fallback (Method 2)")
-                            else:
-                                raise AttributeError("Neither conversation nor response objects available on connection")
+                            # Trigger the next response so AI can speak the result
+                            if hasattr(voicelive_connection, 'response'):
+                                await voicelive_connection.response.create()
+                                logger.info("✅ Triggered response.create() to continue conversation (Method 2)")
 
                         except Exception as e:
-                            # If the SDK method fails, use recovery prompt
-                            logger.error(f"❌ FAILED TO SEND FUNCTION RESULT (Method 2): {e}")
+                            # WebSocket bypass failed
+                            logger.error(f"❌ WebSocket bypass failed (Method 2): {e}")
                             logger.error(traceback.format_exc())
 
                             try:
