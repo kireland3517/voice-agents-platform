@@ -1352,12 +1352,12 @@ Stay focused on your current task in the call flow."""
 
                 logger.info("📤 Sending function result via SDK send method...")
 
-                # Use the SDK's send method directly (available in connection object)
+                # Use the SDK's send method directly (send dict, not JSON string)
                 if hasattr(voicelive_connection, 'send'):
-                    await voicelive_connection.send(json.dumps(raw_message))
+                    await voicelive_connection.send(raw_message)
                     logger.info("✅ Function result sent via connection.send()")
                 elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
-                    await voicelive_connection._connection.send(json.dumps(raw_message))
+                    await voicelive_connection._connection.send(raw_message)
                     logger.info("✅ Function result sent via _connection.send()")
                 else:
                     # Log available attributes for debugging
@@ -1437,12 +1437,12 @@ Stay focused on your current task in the call flow."""
 
                             logger.info("📤 Sending function result via SDK send method (Method 2)...")
 
-                            # Use the SDK's send method directly (available in connection object)
+                            # Use the SDK's send method directly (send dict, not JSON string)
                             if hasattr(voicelive_connection, 'send'):
-                                await voicelive_connection.send(json.dumps(raw_message))
+                                await voicelive_connection.send(raw_message)
                                 logger.info("✅ Function result sent via connection.send() (Method 2)")
                             elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
-                                await voicelive_connection._connection.send(json.dumps(raw_message))
+                                await voicelive_connection._connection.send(raw_message)
                                 logger.info("✅ Function result sent via _connection.send() (Method 2)")
                             else:
                                 # Log available attributes for debugging
