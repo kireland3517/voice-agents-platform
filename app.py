@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, UTC
 import traceback
 import pytz
+import numpy
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request, Form
 from fastapi.responses import JSONResponse, Response
