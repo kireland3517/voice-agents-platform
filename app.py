@@ -221,6 +221,43 @@ class CallSession:
             logger.error(f"Error creating WAV: {e}")
             return None
 
+    def _create_merged_stereo_wav(self, caller_chunks: List[bytes], ai_chunks: List[bytes]) -> Optional[bytes]:
+        """
+        Create a stereo WAV file with caller audio in left channel and AI audio in right channel.
+        Both streams are PCM16 @ 24kHz mono, we merge them into stereo.
+        """
+        try:
+            # Join chunks into continuous streams
+            caller_data = b''.join(caller_chunks) if caller_chunks else b''
+            ai_data = b''.join(ai_chunks) if ai_chunks else b''
+
+            # Pad shorter stream with silence to match lengths
+            max_len = max(len(caller_data), len(ai_data))
+            caller_data = caller_data.ljust(max_len, b'\x00')
+            ai_data = ai_data.ljust(max_len, b'\x00')
+
+            # Convert bytes to numpy arrays (PCM16 = 16-bit signed integers)
+            caller_samples = numpy.frombuffer(caller_data, dtype=numpy.int16)
+            ai_samples = numpy.frombuffer(ai_data, dtype=numpy.int16)
+
+            # Interleave samples to create stereo: [L, R, L, R, L, R, ...]
+            stereo_samples = numpy.empty((caller_samples.size + ai_samples.size,), dtype=numpy.int16)
+            stereo_samples[0::2] = caller_samples  # Left channel (caller)
+            stereo_samples[1::2] = ai_samples      # Right channel (AI)
+
+            # Create stereo WAV file
+            buf = io.BytesIO()
+            with wave.open(buf, "wb") as w:
+                w.setnchannels(2)  # Stereo
+                w.setsampwidth(2)  # 16-bit
+                w.setframerate(24000)  # 24kHz
+                w.writeframes(stereo_samples.tobytes())
+            buf.seek(0)
+            return buf.read()
+        except Exception as e:
+            logger.error(f"Error creating merged stereo WAV: {e}")
+            return None
+
     async def save_to_storage(self):
         try:
             if SAVE_TRANSCRIPTS and self.transcript:
@@ -234,15 +271,23 @@ class CallSession:
                 }
                 config_manager.save_call_transcript(self.company_id, self.call_sid, doc)
 
-            if SAVE_RECORDINGS and self.caller_audio_chunks:
-                wav = self._to_wav(self.caller_audio_chunks)
-                if wav:
-                    config_manager.save_call_recording(self.company_id, f"{self.call_sid}-caller", wav, "wav")
+            if SAVE_RECORDINGS:
+                # Create merged stereo recording (caller=left, AI=right)
+                merged_wav = self._create_merged_stereo_wav(self.caller_audio_chunks, self.ai_audio_chunks)
+                if merged_wav:
+                    config_manager.save_call_recording(self.company_id, self.call_sid, merged_wav, "wav")
+                    logger.info(f"✅ Saved merged stereo recording: {self.call_sid}.wav")
 
-            if SAVE_RECORDINGS and self.ai_audio_chunks:
-                wav = self._to_wav(self.ai_audio_chunks)
-                if wav:
-                    config_manager.save_call_recording(self.company_id, f"{self.call_sid}-ai", wav, "wav")
+                # Also save separate mono files (for debugging/backup)
+                if self.caller_audio_chunks:
+                    caller_wav = self._to_wav(self.caller_audio_chunks)
+                    if caller_wav:
+                        config_manager.save_call_recording(self.company_id, f"{self.call_sid}-caller", caller_wav, "wav")
+
+                if self.ai_audio_chunks:
+                    ai_wav = self._to_wav(self.ai_audio_chunks)
+                    if ai_wav:
+                        config_manager.save_call_recording(self.company_id, f"{self.call_sid}-ai", ai_wav, "wav")
 
             logger.info(f"Successfully saved call session data for {self.call_sid}")
         except Exception as e:
@@ -1124,6 +1169,12 @@ If you were collecting phone/email/address, continue to the next field."""
             if transcript_text.strip() not in INVALID_TOKENS:
                 # Note: This could be user OR assistant transcript depending on event type
                 logger.info(f"📝 TRANSCRIPT: {transcript_text}")
+
+                # Save transcript to session
+                if call_session:
+                    # Determine speaker based on event type
+                    speaker = "assistant" if "response" in event_type_str.lower() else "user"
+                    call_session.add_transcript_entry(speaker, transcript_text)
             else:
                 logger.warning(f"🚫 FILTERED INVALID TOKEN: '{transcript_text}'")
 
