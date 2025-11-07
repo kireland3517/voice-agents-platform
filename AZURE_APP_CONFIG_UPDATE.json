@@ -1,0 +1,23 @@
+{
+  "senior-life/audio-settings": {
+    "voice-rate": "0.95",
+    "voice-pitch": "+0%",
+    "voice-volume": "+0%",
+    "voice-temperature": 0.85,
+    "vad-threshold": 0.35,
+    "vad-prefix-padding-ms": 400,
+    "vad-silence-duration-ms": 600,
+    "vad-end-utterance-timeout-ms": 1500,
+    "enable-barge-in": true,
+    "remove-filler-words": false,
+    "temperature": 0.8,
+    "max-response-tokens": 1500,
+    "transcription-temperature": 0.0,
+    "transcription-prompt": "Sarah, Senior Life Insurance, Medicare, Medicaid, copay, deductible, premium, beneficiary",
+    "audio-sample-rate": 24000,
+    "enable-semantic-vad": true,
+    "enable-noise-suppression": true,
+    "enable-echo-cancellation": true,
+    "enable-audio-transcription": true
+  }
+}
