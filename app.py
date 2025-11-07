@@ -1652,21 +1652,22 @@ async def send_signalwire_audio_to_voicelive(
                         )
 
                         # Voice Live SDK passes context via additional_instructions parameter
-                        # Enhanced with response guidelines for natural, elderly-optimized conversation
-                        enhanced_context = f"""{context_text}
+                        # Format matches v7 prompt expectations
+                        enhanced_context = f"""=== CALL CONTEXT (For This Call Only) ===
 
-RESPONSE GUIDELINES (Apply to ALL responses):
-- Use discourse markers naturally: "So," "Well," "Actually," "Alright" to start responses
-- Add ONE strategic filler when looking things up: "Let me see..." or "One moment..."
-- Keep responses to 2-3 sentences maximum - be concise
-- For phone numbers and addresses, say each digit with slight pauses
-- Show warmth through acknowledgment: "I can definitely help with that"
-- DON'T repeat information back unless asked - no "Thank you, Smith" or "Got it, 703..."
-- Move directly to the next question after receiving info
-- Speak slightly slower and clearer for elderly customers
-- Only confirm information at the very end of the call, not after each field"""
+TRANSFER CONTEXT (Internal Use Only):
+Date: {now_local.strftime('%B %d, %Y')}
+Day: {now_local.strftime('%A')}
+Time: {now_local.strftime('%I:%M %p')} {tz_abbrev}
+Transfer Window: Monday-Saturday, 8:00 AM - 2:00 AM Eastern
 
-                        logger.info(f"📤 Enhanced call context with response guidelines")
+CALLER INFORMATION:
+Phone Number: {formatted_phone}
+
+Use the provided context as instructed in your main prompt.
+Follow all tool usage rules and call flow procedures exactly as specified."""
+
+                        logger.info(f"📤 Call context provided (matches v7 prompt format)")
 
                         # Wait for audio stream to fully establish before greeting
                         await asyncio.sleep(1.5)
@@ -1676,7 +1677,7 @@ RESPONSE GUIDELINES (Apply to ALL responses):
                         await voicelive_connection.response.create(
                             additional_instructions=enhanced_context
                         )
-                        logger.info("✅ Triggered greeting with enhanced context (elderly-optimized natural responses)")
+                        logger.info("✅ Triggered greeting with call context (v7 prompt format)")
 
                     elif event_name == "media":
                         if not call_session:
