@@ -1692,6 +1692,8 @@ async def send_signalwire_audio_to_voicelive(
                         if caller_phone and len(caller_phone) == 12 and caller_phone.startswith('+1'):
                             formatted_phone = f"{caller_phone[:2]}-{caller_phone[2:5]}-{caller_phone[5:8]}-{caller_phone[8:]}"
 
+                        logger.info(f"📞 DEBUG FORMATTING: caller_phone='{caller_phone}', len={len(caller_phone) if caller_phone else 0}, formatted_phone='{formatted_phone}'")
+
                         # Get timezone abbreviation for display (e.g., "EST", "PDT")
                         tz_abbrev = now_local.strftime('%Z')
 
@@ -1720,6 +1722,7 @@ Use the provided context as instructed in your main prompt.
 Follow all tool usage rules and call flow procedures exactly as specified."""
 
                         logger.info(f"📤 Call context provided (matches v7 prompt format)")
+                        logger.info(f"📤 DEBUG FULL CONTEXT:\n{enhanced_context}")
 
                         # Wait for audio stream to fully establish before greeting
                         await asyncio.sleep(1.5)
