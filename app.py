@@ -1721,7 +1721,7 @@ Phone Number: {formatted_phone}
 Use the provided context as instructed in your main prompt.
 Follow all tool usage rules and call flow procedures exactly as specified."""
 
-                        logger.info(f"📤 Call context provided (matches v7 prompt format)")
+                        logger.info(f"📤 Call context provided (matches v12 prompt format)")
                         logger.info(f"📤 DEBUG FULL CONTEXT:\n{enhanced_context}")
 
                         # Wait for audio stream to fully establish before greeting
@@ -1732,7 +1732,7 @@ Follow all tool usage rules and call flow procedures exactly as specified."""
                         await voicelive_connection.response.create(
                             additional_instructions=enhanced_context
                         )
-                        logger.info("✅ Triggered greeting with call context (v7 prompt format)")
+                        logger.info("✅ Triggered greeting with call context (v12 prompt format)")
 
                     elif event_name == "media":
                         if not call_session:
