@@ -1690,7 +1690,8 @@ async def send_signalwire_audio_to_voicelive(
                         
                         formatted_phone = caller_phone or "Unknown"
                         if caller_phone and len(caller_phone) == 12 and caller_phone.startswith('+1'):
-                            formatted_phone = f"{caller_phone[:2]}-{caller_phone[2:5]}-{caller_phone[5:8]}-{caller_phone[8:]}"
+                            # Strip the +1 country code - just send the 10 digits for easy reading
+                            formatted_phone = caller_phone[2:]
 
                         logger.info(f"📞 DEBUG FORMATTING: caller_phone='{caller_phone}', len={len(caller_phone) if caller_phone else 0}, formatted_phone='{formatted_phone}'")
 
