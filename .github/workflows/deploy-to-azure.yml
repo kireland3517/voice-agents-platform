@@ -277,12 +277,14 @@ jobs:
           tenant-id: ${{ secrets.VOICEAGENTSBRIDGE_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.VOICEAGENTSBRIDGE_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Upload prompt to Blob Storage
+      - name: Upload prompts to Blob Storage
         run: |
-          echo "Uploading sarah_instructions_senior_life.md to Blob Storage..."
+          echo "Uploading prompts to Blob Storage..."
           echo "Branch: ${{ github.ref_name }}"
           echo "Commit: ${{ github.sha }}"
 
+          # Upload current/active version
+          echo "Uploading current version (instructions.md)..."
           az storage blob upload \
             --account-name voiceagentsstorage \
             --container-name company-configs \
@@ -290,8 +292,37 @@ jobs:
             --file sarah_instructions_senior_life.md \
             --auth-mode login \
             --overwrite \
-            && echo "✅ Prompt uploaded successfully!" \
-            || echo "⚠️ Blob upload failed"
+            && echo "✅ Current version uploaded successfully!" \
+            || echo "⚠️ Current version upload failed"
+
+          # Upload archived versions (if they exist)
+          if [ -f "prompts/sarah-v13-exact-scripts.md" ]; then
+            echo "Uploading v13 (exact scripts)..."
+            az storage blob upload \
+              --account-name voiceagentsstorage \
+              --container-name company-configs \
+              --name senior-life/prompts/sarah-v13-exact-scripts.md \
+              --file prompts/sarah-v13-exact-scripts.md \
+              --auth-mode login \
+              --overwrite \
+              && echo "✅ v13 uploaded!" \
+              || echo "⚠️ v13 upload failed"
+          fi
+
+          if [ -f "prompts/sarah-v14-principles.md" ]; then
+            echo "Uploading v14 (principles)..."
+            az storage blob upload \
+              --account-name voiceagentsstorage \
+              --container-name company-configs \
+              --name senior-life/prompts/sarah-v14-principles.md \
+              --file prompts/sarah-v14-principles.md \
+              --auth-mode login \
+              --overwrite \
+              && echo "✅ v14 uploaded!" \
+              || echo "⚠️ v14 upload failed"
+          fi
+
+          echo "✅ All prompts processed!"
 
       - name: Verify upload
         run: |
