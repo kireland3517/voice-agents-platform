@@ -1722,18 +1722,20 @@ Phone Number: {formatted_phone}
 Use the provided context as instructed in your main prompt.
 Follow all tool usage rules and call flow procedures exactly as specified."""
 
-                        logger.info(f"📤 Call context provided (matches v12 prompt format)")
+                        logger.info(f"📤 Call context prepared (matches v12 prompt format)")
                         logger.info(f"📤 DEBUG FULL CONTEXT:\n{enhanced_context}")
+
+                        # Store context for injection on first media event
+                        shared_state["enhanced_context"] = enhanced_context
+                        shared_state["context_injected"] = False
 
                         # Wait for audio stream to fully establish before greeting
                         await asyncio.sleep(1.5)
 
-                        # Trigger response with enhanced context via additional_instructions
-                        # SDK supports: response.create(response, event_id, additional_instructions)
-                        await voicelive_connection.response.create(
-                            additional_instructions=enhanced_context
-                        )
-                        logger.info("✅ Triggered greeting with call context (v12 prompt format)")
+                        # Trigger greeting WITHOUT context injection
+                        # Context will be injected on first media event to ensure consistent tone
+                        await voicelive_connection.response.create()
+                        logger.info("✅ Triggered greeting (context will be injected on first media event)")
 
                     elif event_name == "media":
                         if not call_session:
@@ -1742,6 +1744,19 @@ Follow all tool usage rules and call flow procedures exactly as specified."""
                         payload = (data.get("media") or {}).get("payload")
                         if not payload:
                             continue
+
+                        # Inject context on first media event (after greeting is done)
+                        if not shared_state.get("context_injected", False):
+                            enhanced_context = shared_state.get("enhanced_context")
+                            if enhanced_context:
+                                try:
+                                    await voicelive_connection.response.create(
+                                        additional_instructions=enhanced_context
+                                    )
+                                    shared_state["context_injected"] = True
+                                    logger.info("✅ Context injected on first media event (v12 prompt format)")
+                                except Exception as e:
+                                    logger.error(f"❌ Error injecting context: {e}")
 
                         # Save raw audio for recording
                         if SAVE_RECORDINGS:
