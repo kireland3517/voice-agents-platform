@@ -27,7 +27,7 @@ on:
       - '.github/workflows/deploy-to-azure.yml'
       - 'config.py'
       - 'app.py'
-      - '**.md'           # Instructions files (Blob Storage)
+      - 'sarah_instructions_senior_life.md'  # Sarah prompt (auto-synced to Blob Storage)
 
   # Manual trigger with environment selection
   workflow_dispatch:
@@ -348,15 +348,15 @@ jobs:
 
       - name: Upload instructions to Blob Storage (Staging)
         run: |
-          echo "Uploading cedar_instructions_enhanced.md to staging Blob Storage..."
-          # This would use Azure CLI to upload to staging container
+          echo "Uploading sarah_instructions_senior_life.md to staging Blob Storage..."
           az storage blob upload \
-            --account-name ${{ secrets.STAGING_STORAGE_ACCOUNT }} \
-            --container-name agent-instructions \
-            --name cedar_instructions.md \
-            --file cedar_instructions_enhanced.md \
+            --account-name voiceagentsstorage \
+            --container-name company-configs \
+            --name senior-life/instructions.md \
+            --file sarah_instructions_senior_life.md \
+            --auth-mode login \
             --overwrite \
-            || echo "⚠️ Blob upload skipped (configure STAGING_STORAGE_ACCOUNT secret)"
+            || echo "⚠️ Blob upload failed - may need manual upload via portal"
 
   # --------------------------------------------------------------------------
   # JOB 6: DEPLOY TO PRODUCTION
@@ -458,15 +458,15 @@ jobs:
       - name: Upload instructions to Blob Storage (Production)
         if: steps.verify.outputs.deployment-status == 'success'
         run: |
-          echo "Uploading cedar_instructions_enhanced.md to production Blob Storage..."
-          # This would use Azure CLI to upload to production container
+          echo "Uploading sarah_instructions_senior_life.md to production Blob Storage..."
           az storage blob upload \
-            --account-name ${{ secrets.PRODUCTION_STORAGE_ACCOUNT }} \
-            --container-name agent-instructions \
-            --name cedar_instructions.md \
-            --file cedar_instructions_enhanced.md \
+            --account-name voiceagentsstorage \
+            --container-name company-configs \
+            --name senior-life/instructions.md \
+            --file sarah_instructions_senior_life.md \
+            --auth-mode login \
             --overwrite \
-            || echo "⚠️ Blob upload skipped (configure PRODUCTION_STORAGE_ACCOUNT secret)"
+            || echo "⚠️ Blob upload failed - may need manual upload via portal"
 
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main' && steps.verify.outputs.deployment-status == 'success'

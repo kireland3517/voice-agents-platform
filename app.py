@@ -365,6 +365,46 @@ class SessionMonitor:
 # ──────────────────────────────────────────────────────────────────────────────
 # PROMPT BUILDER (Simplified - Instructions from Blob Storage)
 # ──────────────────────────────────────────────────────────────────────────────
+def extract_prompt_version(instructions):
+    """
+    Extract version metadata from prompt instructions.
+    Looks for YAML-style header with Version, Last Updated, Changes, and Git Commit.
+
+    Expected format:
+    ---
+    PROMPT METADATA
+    Version: 13
+    Last Updated: 2025-11-08
+    Changes: Context injection timing fix (Ch81)...
+    Git Commit: e06c07b
+    Previous Versions: v12 (2025-11-07 caller ID format)...
+    ---
+    """
+    import re
+
+    # Extract version number
+    version_match = re.search(r'Version:\s*(\d+)', instructions)
+    version = version_match.group(1) if version_match else "Unknown"
+
+    # Extract last updated date
+    date_match = re.search(r'Last Updated:\s*([^\n]+)', instructions)
+    last_updated = date_match.group(1).strip() if date_match else "Unknown"
+
+    # Extract git commit
+    commit_match = re.search(r'Git Commit:\s*([a-f0-9]{7})', instructions)
+    git_commit = commit_match.group(1) if commit_match else "Unknown"
+
+    # Extract changes summary (first 100 chars)
+    changes_match = re.search(r'Changes:\s*([^\n]+)', instructions)
+    changes = changes_match.group(1).strip()[:100] if changes_match else "No change log"
+
+    return {
+        'version': version,
+        'last_updated': last_updated,
+        'git_commit': git_commit,
+        'changes': changes
+    }
+
 def build_company_instructions(company_config):
     """
     Load company instructions from Blob Storage.
@@ -384,7 +424,12 @@ def build_company_instructions(company_config):
     if detailed_instructions:
         # Use instructions from Blob Storage (recommended)
         instructions = detailed_instructions
+
+        # Extract and log version metadata
+        version_info = extract_prompt_version(instructions)
         logger.info(f"✅ Loaded instructions from Blob Storage ({len(detailed_instructions)} characters)")
+        logger.info(f"📋 Prompt Version: {version_info['version']} (updated: {version_info['last_updated']}, commit: {version_info['git_commit']})")
+        logger.info(f"📋 Changes: {version_info['changes']}")
     else:
         # Minimal fallback if Blob Storage file missing
         logger.warning(f"⚠️ No Blob Storage instructions found for {company_name}, using minimal fallback")
