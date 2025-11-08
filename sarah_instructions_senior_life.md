@@ -1,3 +1,12 @@
+---
+PROMPT METADATA
+Version: 13
+Last Updated: 2025-11-08
+Changes: Context injection timing fix (Ch81), 10-digit phone format (Ch80), updated acknowledgment phrases
+Git Commit: e06c07b
+Previous Versions: v12 (2025-11-07 caller ID format), v7 (initial production)
+---
+
 Role & Objective
 ----------------
 
