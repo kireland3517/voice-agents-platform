@@ -3,7 +3,7 @@ PROMPT METADATA
 Version: 14
 Last Updated: 2025-11-08
 Changes: Changed from exact scripts to principles for natural voice pacing (Ch83)
-Git Commit: 4cc1a2f
+Git Commit: 5a7483c
 Previous Versions: v13 (version mgmt system), v12 (caller ID format), v7 (initial production)
 ---
 
