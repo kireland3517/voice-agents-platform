@@ -552,10 +552,12 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
                 threshold=vad_threshold,
                 prefix_padding_ms=vad_prefix_padding_ms,
                 silence_duration_ms=vad_silence_duration_ms,
-                remove_filler_words=remove_filler_words
+                remove_filler_words=remove_filler_words,
+                interrupt_response=True,  # CRITICAL: Allow user to interrupt AI
+                auto_truncate=True  # CRITICAL: Cut off AI speech on interrupt
                 # NOTE: end_of_utterance_detection is NOT supported by AzureSemanticVad
             )
-            logger.info(f"✅ Barge-in ENABLED - Semantic VAD (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words})")
+            logger.info(f"✅ Barge-in ENABLED - Semantic VAD (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words}, interrupt=True, auto_truncate=True)")
         else:
             turn_detection_config = None
             logger.info(f"⚠️ Barge-in DISABLED - Callers cannot interrupt agent")
@@ -1330,7 +1332,42 @@ Stay focused on your current task in the call flow."""
         logger.info(f"✅ {company_name} Voice Live session ready")
 
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
-        logger.info("🎤 Caller started speaking")
+        logger.info("🎤 Caller started speaking - BARGE-IN DETECTED")
+
+        # ══════════════════════════════════════════════════════════════════
+        # TRIPLE-ACTION BARGE-IN PATTERN (Distributed Cancellation)
+        # ══════════════════════════════════════════════════════════════════
+
+        # ACTION 1: Clear SignalWire audio buffer (stops playback immediately)
+        if stream_sid and signalwire_ws.application_state == WebSocketState.CONNECTED:
+            try:
+                await signalwire_ws.send_json({
+                    "event": "clear",
+                    "streamSid": stream_sid
+                })
+                logger.info("🔇 ACTION 1: Sent CLEAR to SignalWire - flushed audio buffer")
+            except Exception as e:
+                logger.warning(f"Failed to clear SignalWire buffer: {e}")
+
+        # ACTION 2: Cancel Azure response generation
+        try:
+            await voicelive_connection.response.cancel()
+            logger.info("🛑 ACTION 2: Sent response.cancel to Azure")
+        except Exception as e:
+            logger.warning(f"Failed to cancel response: {e}")
+
+        # ACTION 3: Inject context system message for conversational recovery
+        try:
+            await voicelive_connection.conversation.item.create(
+                item={
+                    "type": "message",
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": "SYSTEM: User interrupted. Stop previous task. Acknowledge and listen."}]
+                }
+            )
+            logger.info("💬 ACTION 3: Injected interruption context system message")
+        except Exception as e:
+            logger.warning(f"Failed to inject context: {e}")
 
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
         logger.info("🎤 Caller stopped speaking")
@@ -1398,6 +1435,9 @@ Stay focused on your current task in the call flow."""
         response_tracker.log_suppression()
         # Context is now injected WITH greeting (single response.create call)
         # No separate context injection needed here
+
+    elif event.type == ServerEventType.RESPONSE_CANCELLED:
+        logger.info("✅ Response cancelled successfully (barge-in)")
 
     elif event.type == ServerEventType.ERROR:
         error_msg = getattr(event, 'error', {}).get('message', 'Unknown error') if hasattr(event, 'error') else 'Unknown error'
