@@ -995,7 +995,9 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         "call_session": None,
         "stream_sid": None,
         "monitor": SessionMonitor(company_id),  # Add session monitor
-        "query_caller_id": query_caller_id  # Caller ID from URL query parameters
+        "query_caller_id": query_caller_id,  # Caller ID from URL query parameters
+        "greeting_done": False,  # Track when greeting completes (prevents race condition)
+        "enhanced_context": None  # Store context for injection after greeting
     }
     voicelive_connection = None
     heartbeat_task = None
@@ -1032,11 +1034,12 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
                     stream_sid = shared_state.get("stream_sid")
                     monitor = shared_state.get("monitor")
 
-                    # Pass monitor to event handler
+                    # Pass monitor and shared_state to event handler
                     await handle_voicelive_event(
                         event, signalwire_ws, voicelive_connection,
                         company_name, stream_sid, call_session,
-                        monitor  # Add monitor parameter
+                        monitor,  # Add monitor parameter
+                        shared_state  # Add shared_state for context injection
                     )
                 except Exception as e:
                     logger.error(f"Error handling Voice Live event: {e}")
@@ -1142,7 +1145,8 @@ async def handle_voicelive_event(
     company_name: str,
     stream_sid: Optional[str],
     call_session: Optional[CallSession],
-    monitor: Optional[SessionMonitor] = None  # Add monitor parameter
+    monitor: Optional[SessionMonitor] = None,  # Add monitor parameter
+    shared_state: Optional[Dict[str, Any]] = None  # Add shared_state for context injection
 ):
     """Handle events from Voice Live API and forward to SignalWire"""
     logger.debug(f"📥 Voice Live event: {event.type}")
@@ -1392,6 +1396,20 @@ Stay focused on your current task in the call flow."""
         logger.info("✅ Response complete")
         # Log if we suppressed audio-only chunks
         response_tracker.log_suppression()
+
+        # Inject context after greeting completes (prevents race condition)
+        # This happens only once - after the first response (greeting) is done
+        if shared_state and not shared_state.get("greeting_done", False):
+            enhanced_context = shared_state.get("enhanced_context")
+            if enhanced_context:
+                try:
+                    await voicelive_connection.response.create(
+                        additional_instructions=enhanced_context
+                    )
+                    shared_state["greeting_done"] = True
+                    logger.info("✅ Context injected after greeting completed (no race condition)")
+                except Exception as e:
+                    logger.error(f"❌ Error injecting context after greeting: {e}")
 
     elif event.type == ServerEventType.ERROR:
         error_msg = getattr(event, 'error', {}).get('message', 'Unknown error') if hasattr(event, 'error') else 'Unknown error'
@@ -1795,17 +1813,16 @@ Follow all tool usage rules and call flow procedures exactly as specified."""
                         logger.info(f"📤 Call context prepared (matches v12 prompt format)")
                         logger.info(f"📤 DEBUG FULL CONTEXT:\n{enhanced_context}")
 
-                        # Store context for injection on first media event
+                        # Store context for injection after greeting completes
                         shared_state["enhanced_context"] = enhanced_context
-                        shared_state["context_injected"] = False
 
                         # Wait for audio stream to fully establish before greeting
                         await asyncio.sleep(1.5)
 
                         # Trigger greeting WITHOUT context injection
-                        # Context will be injected on first media event to ensure consistent tone
+                        # Context will be injected after greeting completes (RESPONSE_DONE event)
                         await voicelive_connection.response.create()
-                        logger.info("✅ Triggered greeting (context will be injected on first media event)")
+                        logger.info("✅ Triggered greeting (context will be injected after greeting completes)")
 
                     elif event_name == "media":
                         if not call_session:
@@ -1814,19 +1831,6 @@ Follow all tool usage rules and call flow procedures exactly as specified."""
                         payload = (data.get("media") or {}).get("payload")
                         if not payload:
                             continue
-
-                        # Inject context on first media event (after greeting is done)
-                        if not shared_state.get("context_injected", False):
-                            enhanced_context = shared_state.get("enhanced_context")
-                            if enhanced_context:
-                                try:
-                                    await voicelive_connection.response.create(
-                                        additional_instructions=enhanced_context
-                                    )
-                                    shared_state["context_injected"] = True
-                                    logger.info("✅ Context injected on first media event (v12 prompt format)")
-                                except Exception as e:
-                                    logger.error(f"❌ Error injecting context: {e}")
 
                         # Save raw audio for recording
                         if SAVE_RECORDINGS:
