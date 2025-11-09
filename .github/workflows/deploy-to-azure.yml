@@ -287,11 +287,11 @@ jobs:
           echo "Commit: ${{ github.sha }}"
 
           # Upload current/active version
-          echo "Uploading current version (instructions.md)..."
+          echo "Uploading current version (sarah_instructions_senior_life.md)..."
           az storage blob upload \
             --account-name voiceagentsinstructions \
             --container-name agent-instructions \
-            --name senior-life/instructions.md \
+            --name sarah_instructions_senior_life.md \
             --file sarah_instructions_senior_life.md \
             --auth-mode login \
             --overwrite \
@@ -333,7 +333,7 @@ jobs:
           az storage blob show \
             --account-name voiceagentsinstructions \
             --container-name agent-instructions \
-            --name senior-life/instructions.md \
+            --name sarah_instructions_senior_life.md \
             --auth-mode login \
             --query "{LastModified:properties.lastModified, Size:properties.contentLength}" \
             || echo "Could not verify upload"
@@ -437,7 +437,7 @@ jobs:
           az storage blob upload \
             --account-name voiceagentsinstructions \
             --container-name agent-instructions \
-            --name senior-life/instructions.md \
+            --name sarah_instructions_senior_life.md \
             --file sarah_instructions_senior_life.md \
             --auth-mode login \
             --overwrite \
@@ -547,7 +547,7 @@ jobs:
           az storage blob upload \
             --account-name voiceagentsinstructions \
             --container-name agent-instructions \
-            --name senior-life/instructions.md \
+            --name sarah_instructions_senior_life.md \
             --file sarah_instructions_senior_life.md \
             --auth-mode login \
             --overwrite \
