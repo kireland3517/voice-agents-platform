@@ -290,7 +290,7 @@ jobs:
           echo "Uploading current version (instructions.md)..."
           az storage blob upload \
             --account-name voiceagentsinstructions \
-            --container-name company-configs \
+            --container-name agent-instructions \
             --name senior-life/instructions.md \
             --file sarah_instructions_senior_life.md \
             --auth-mode login \
@@ -303,7 +303,7 @@ jobs:
             echo "Uploading v13 (exact scripts)..."
             az storage blob upload \
               --account-name voiceagentsinstructions \
-              --container-name company-configs \
+              --container-name agent-instructions \
               --name senior-life/prompts/sarah-v13-exact-scripts.md \
               --file prompts/sarah-v13-exact-scripts.md \
               --auth-mode login \
@@ -316,7 +316,7 @@ jobs:
             echo "Uploading v14 (principles)..."
             az storage blob upload \
               --account-name voiceagentsinstructions \
-              --container-name company-configs \
+              --container-name agent-instructions \
               --name senior-life/prompts/sarah-v14-principles.md \
               --file prompts/sarah-v14-principles.md \
               --auth-mode login \
@@ -332,7 +332,7 @@ jobs:
           echo "Verifying blob upload..."
           az storage blob show \
             --account-name voiceagentsinstructions \
-            --container-name company-configs \
+            --container-name agent-instructions \
             --name senior-life/instructions.md \
             --auth-mode login \
             --query "{LastModified:properties.lastModified, Size:properties.contentLength}" \
@@ -436,7 +436,7 @@ jobs:
           echo "Uploading sarah_instructions_senior_life.md to staging Blob Storage..."
           az storage blob upload \
             --account-name voiceagentsinstructions \
-            --container-name company-configs \
+            --container-name agent-instructions \
             --name senior-life/instructions.md \
             --file sarah_instructions_senior_life.md \
             --auth-mode login \
@@ -546,7 +546,7 @@ jobs:
           echo "Uploading sarah_instructions_senior_life.md to production Blob Storage..."
           az storage blob upload \
             --account-name voiceagentsinstructions \
-            --container-name company-configs \
+            --container-name agent-instructions \
             --name senior-life/instructions.md \
             --file sarah_instructions_senior_life.md \
             --auth-mode login \
