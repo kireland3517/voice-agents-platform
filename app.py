@@ -81,7 +81,6 @@ def get_cached_config(company_id: str):
 # FUNCTION FEEDBACK MESSAGES (Pre-function verbal feedback)
 # ──────────────────────────────────────────────────────────────────────────────
 FUNCTION_FEEDBACK = {
-    "lookup_zipcode": "Let me confirm that ZIP code for you.",
     "transfer_window_check": "One moment checking availability."
 }
 
