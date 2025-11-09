@@ -2,9 +2,21 @@
 
 This directory contains archived versions of Sarah's prompt for reference and rollback purposes.
 
+## Automated Versioning System
+
+**Every time you push to main:**
+1. The CI/CD workflow extracts version number and description from `sarah_instructions_senior_life.md`
+2. Creates an archive: `prompts/sarah-v{VERSION}-{description}.md`
+3. Commits the archive back to git
+4. Uploads to Azure Blob Storage:
+   - Root: `sarah_instructions_senior_life.md` (what app.py loads)
+   - Archive: `senior-life/prompts/sarah-v{VERSION}-{description}.md`
+
+**Azure Blob Versioning:** Also enabled - Azure automatically snapshots every overwrite with a timestamp for safety.
+
 ## Current Active Version
 
-**File in Blob Storage:** `senior-life/instructions.md`
+**File in Blob Storage:** `sarah_instructions_senior_life.md` (root of agent-instructions container)
 **Version:** 14 (Principles-based)
 **Source File:** `../sarah_instructions_senior_life.md`
 
@@ -12,7 +24,7 @@ This directory contains archived versions of Sarah's prompt for reference and ro
 
 ### v14 - Principles-Based (Current)
 **File:** `sarah-v14-principles.md`
-**Changes:** Removed exact word-for-word scripts, replaced with flexible principles
+**Changes:** Changed from exact scripts to principles for natural voice pacing (Ch83)
 - Phone numbers: "Read digits in groups (3-3-4 pattern) with natural pauses"
 - Natural variation instead of rigid templates
 - Improved voice cadence and reduced robotic delivery
@@ -28,43 +40,79 @@ This directory contains archived versions of Sarah's prompt for reference and ro
 
 **When to use:** If you need highly consistent exact phrasing (e.g., legal/compliance requirements)
 
+## How to Create a New Version
+
+1. Edit `sarah_instructions_senior_life.md` in the repo root
+2. Update the metadata header:
+   ```markdown
+   ---
+   PROMPT METADATA
+   Version: 15
+   Last Updated: 2025-11-09
+   Changes: Brief description of what changed
+   Git Commit: (will be filled after commit)
+   Previous Versions: v14 (principles), v13 (exact scripts)
+   ---
+   ```
+3. Commit and push to main
+4. The workflow automatically:
+   - Creates `prompts/sarah-v15-brief-description.md`
+   - Commits it to git
+   - Uploads to Azure Blob Storage
+
+**That's it!** No manual archiving needed.
+
 ## How to Switch Versions
 
-### Via Azure Portal (Manual):
-1. Go to: Azure Portal → voiceagentsstorage → Containers → company-configs → senior-life
-2. Upload the desired version file
-3. Rename it to `instructions.md` (or use "Copy" feature)
-4. Restart the container app (or wait for next call)
-
-### Via CI/CD (Automated):
-1. Copy desired version to `sarah_instructions_senior_life.md` in repo root
-2. Update version metadata in the file
-3. Commit and push
-4. CI/CD will automatically upload to blob storage
-
-## Rollback Process
-
-If you need to rollback from v14 to v13:
+### Rollback to Previous Version:
 
 ```bash
-# 1. Copy v13 back to main file
+# 1. Copy desired version back to main file
 cp prompts/sarah-v13-exact-scripts.md sarah_instructions_senior_life.md
 
-# 2. Update version number in file to v15 (or next version)
-# Add note: "Rollback to exact scripts from v13"
+# 2. Update version metadata in file to NEXT version (v15)
+# Add note in Changes: "Rollback to v13 exact scripts"
 
 # 3. Commit and push
 git add sarah_instructions_senior_life.md
-git commit -m "Rollback to v13 exact scripts (now v15)"
+git commit -m "Ch84: Rollback to v13 exact scripts"
 git push
 
-# CI/CD will auto-deploy
+# CI/CD will auto-archive as v15 and deploy
 ```
 
-## Future: Blob Versioning
+## Viewing Version History in Azure
 
-Once blob versioning is enabled on Azure Storage:
-- Every upload automatically saves previous version
-- Can restore any version via Azure Portal
-- No need to manually manage version files
-- Git history serves as documentation, blob storage has the backups
+### Azure Portal:
+1. Go to: Storage account → **voiceagentsinstructions** → Containers → **agent-instructions**
+2. Navigate to folder: **senior-life/prompts/**
+3. You'll see all archived versions with descriptive names
+
+### Azure Blob Versions (timestamped snapshots):
+1. Go to: Storage account → **voiceagentsinstructions** → Containers → **agent-instructions**
+2. Click on: `sarah_instructions_senior_life.md`
+3. Click the **Versions** tab
+4. See all historical versions with timestamps (automatic backups)
+
+## Emergency Restore
+
+If you need to restore from Azure Blob versioned snapshot:
+
+```bash
+# List all versions with timestamps
+az storage blob list \
+  --account-name voiceagentsinstructions \
+  --container-name agent-instructions \
+  --prefix sarah_instructions_senior_life.md \
+  --include v \
+  --auth-mode login
+
+# Download specific version by version ID
+az storage blob download \
+  --account-name voiceagentsinstructions \
+  --container-name agent-instructions \
+  --name sarah_instructions_senior_life.md \
+  --version-id "2025-11-09T01:15:07.7051939Z" \
+  --file sarah_restored.md \
+  --auth-mode login
+```
