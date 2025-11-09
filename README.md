@@ -1,8 +1,8 @@
 # Azure Voice Live API - Voice Agent Platform
 
-**Version:** 20.0
+**Version:** 21.0
 **Status:** Production
-**Last Updated:** November 1, 2025
+**Last Updated:** November 9, 2025
 
 Real-time AI voice agent platform powered by Azure Voice Live API with function calling, enabling natural phone conversations for insurance companies.
 
@@ -10,7 +10,7 @@ Real-time AI voice agent platform powered by Azure Voice Live API with function 
 
 ## 🎯 What This Does
 
-Customers call a phone number → Azure handles the call → AI agent (Cedar) answers → Natural conversation with voice → Information collected → Transfer to human agent or schedule callback.
+Customers call a phone number → Azure handles the call → AI agent (Sarah for Senior Life) answers → Natural conversation with voice → Information collected → Transfer to human agent or schedule callback.
 
 **Key Features:**
 - ✅ Natural, human-like AI voice conversations
@@ -47,27 +47,27 @@ Phone Call → SignalWire → Azure Voice Live API → AI Processing → Voice R
 
 ---
 
-## 🚀 Current Version: 20.0
+## 🚀 Current Version: 21.0
 
-### What's New in v20.0
+### What's New in v21.0
 
-**Function Calling - Production Ready** 🎉
-- Surname verification using 162,000-name phonetic database
-- ZIP code validation with city/state confirmation
-- **SDK Bypass:** Raw WebSocket implementation (workaround for SDK limitations)
+**Automated Prompt Management** 🎉
+- GitHub Actions CI/CD for automated prompt uploads to Azure Blob Storage
+- Automated prompt versioning with git integration
+- Version archive system: `prompts/sarah-v{VERSION}-{description}.md`
+- Azure Blob Versioning enabled for automatic timestamped snapshots
+- Principles-based conversation flow (v14) instead of exact scripts
 
-**Production Optimizations:**
-- SessionMonitor for token usage and call metrics
-- Connection retry with exponential backoff (2s, 4s, 8s)
-- Heartbeat loop for connection keep-alive (30s intervals)
-- Optimal 100ms audio chunking (2400 samples @ 24kHz)
-- Token usage warnings (64k, 100k thresholds)
-- Session summaries with comprehensive metrics
+**Infrastructure Improvements:**
+- Workspace cleanup (Ch84): Removed deprecated Cedar files and troubleshooting docs
+- Fixed Pylance import warnings with pyrightconfig.json
+- Cleanup scripts for future maintenance (cleanup.ps1, cleanup.sh)
+- Streamlined blob storage structure
 
-**Bug Fixes:**
-- Removed unsupported transcription parameters (temperature, phrase_list)
-- Fixed function output submission via raw WebSocket
-- Improved error handling and logging
+**Prompt Updates:**
+- Sarah v14: Natural phone number grouping (3-3-4 pattern)
+- Principles-based guidance for flexible, natural voice cadence
+- Removed exact word-for-word scripts for more conversational flow
 
 ---
 
@@ -112,19 +112,32 @@ AI: "So that's Fairfax, Virginia, correct?"
 
 ```
 voice-agents-platform/
-├── app.py                    # Main application (Quart server, WebSocket handling)
-├── config.py                 # Configuration manager (Azure App Config, Blob Storage)
-├── surname_verifier.py       # Surname verification service (162K database)
-├── zipcode_service.py        # ZIP code lookup service (40K entries)
-├── call_session.py           # Call session tracking
+├── app.py                           # Main application (Quart server, WebSocket handling)
+├── config.py                        # Configuration manager (Azure App Config, Blob Storage)
+├── surname_verifier.py              # Surname verification service (162K database)
+├── zipcode_service.py               # ZIP code lookup service (40K entries)
+├── call_session.py                  # Call session tracking
 │
-├── FUNCTION_CALLING.md       # Function calling architecture & SDK bypass
-├── ARCHITECTURE_DIAGRAMS.md  # Mermaid diagrams (12 diagrams)
-├── Technical_Architecture.md # Detailed technical documentation
+├── sarah_instructions_senior_life.md # Current production prompt (v14)
+├── prompts/                         # Versioned prompt archives
+│   ├── README.md                    # Prompt management guide
+│   ├── sarah-v13-exact-scripts.md   # v13 archive
+│   └── sarah-v14-changed-from...md  # v14 archive (auto-generated)
 │
-├── Dockerfile                # Container build configuration
-├── requirements.txt          # Python dependencies
-└── .env.example              # Environment variable template
+├── .github/workflows/               # CI/CD automation
+│   └── deploy-to-azure.yml          # Automated deployments & prompt uploads
+│
+├── cleanup.ps1                      # PowerShell cleanup script
+├── cleanup.sh                       # Bash cleanup script
+├── pyrightconfig.json               # VSCode Pylance configuration
+│
+├── FUNCTION_CALLING.md              # Function calling architecture & SDK bypass
+├── ARCHITECTURE_DIAGRAMS.md         # Mermaid diagrams (12 diagrams)
+├── Technical_Architecture.md        # Detailed technical documentation
+│
+├── Dockerfile                       # Container build configuration
+├── requirements.txt                 # Python dependencies
+└── .env.example                     # Environment variable template
 ```
 
 ---
@@ -145,9 +158,12 @@ Each company has isolated configuration under `{company-id}/*`:
 ### System Instructions (Blob Storage)
 
 Detailed AI personality and conversation scripts:
-- **Location:** `agent-instructions/{company-id}_instructions.md`
+- **Current Version:** `agent-instructions/sarah_instructions_senior_life.md`
+- **Archives:** `agent-instructions/senior-life/prompts/sarah-v{VERSION}-{description}.md`
+- **Versioning:** Azure Blob Versioning enabled (automatic timestamped snapshots)
+- **Deployment:** Automated via GitHub Actions on every push to main
 - **Content:** Complete system prompt, call flow, objection handling
-- **Example:** cedar_instructions.md (16KB production script)
+- **Management:** See `prompts/README.md` for version management guide
 
 ---
 
@@ -338,6 +354,7 @@ For issues or questions:
 ---
 
 **Version History:**
+- v21.0 (Nov 9, 2025) - Automated prompt management, GitHub Actions CI/CD, Azure Blob Versioning, workspace cleanup (Ch84)
 - v20.0 (Nov 1, 2025) - Function calling via SDK bypass, production optimizations
 - v19.x (Oct 31, 2025) - Function calling iterations, transcription fixes
 - v18.x (Oct 30, 2025) - Initial function calling implementation
