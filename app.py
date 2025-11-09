@@ -1396,39 +1396,8 @@ Stay focused on your current task in the call flow."""
         logger.info("✅ Response complete")
         # Log if we suppressed audio-only chunks
         response_tracker.log_suppression()
-
-        # Inject context after greeting completes (prevents race condition)
-        # This happens only once - after the first response (greeting) is done
-        # Use conversation.item.create to add context WITHOUT triggering a response
-        if shared_state and not shared_state.get("greeting_done", False):
-            enhanced_context = shared_state.get("enhanced_context")
-            if enhanced_context:
-                try:
-                    # Add context as a system message to conversation history
-                    # This does NOT trigger a response (unlike response.create)
-                    context_message = {
-                        "type": "conversation.item.create",
-                        "item": {
-                            "type": "message",
-                            "role": "system",
-                            "content": [
-                                {
-                                    "type": "input_text",
-                                    "text": enhanced_context
-                                }
-                            ]
-                        }
-                    }
-
-                    # Send via raw WebSocket (SDK doesn't support system messages properly)
-                    if hasattr(voicelive_connection, 'send'):
-                        await voicelive_connection.send(context_message)
-                        shared_state["greeting_done"] = True
-                        logger.info("✅ Context injected as system message (no unwanted response)")
-                    else:
-                        logger.error("❌ Cannot access send method for context injection")
-                except Exception as e:
-                    logger.error(f"❌ Error injecting context after greeting: {e}")
+        # Context is now injected WITH greeting (single response.create call)
+        # No separate context injection needed here
 
     elif event.type == ServerEventType.ERROR:
         error_msg = getattr(event, 'error', {}).get('message', 'Unknown error') if hasattr(event, 'error') else 'Unknown error'
@@ -1838,10 +1807,16 @@ Follow all tool usage rules and call flow procedures exactly as specified."""
                         # Wait for audio stream to fully establish before greeting
                         await asyncio.sleep(1.5)
 
-                        # Trigger greeting WITHOUT context injection
-                        # Context will be injected after greeting completes (RESPONSE_DONE event)
-                        await voicelive_connection.response.create()
-                        logger.info("✅ Triggered greeting (context will be injected after greeting completes)")
+                        # Trigger greeting WITH context injection (prevents race condition)
+                        # Including context in same response.create() avoids:
+                        # - Race condition (only one call)
+                        # - Unwanted response (no separate context injection)
+                        # - Invalid token loops (no system message after greeting)
+                        await voicelive_connection.response.create(
+                            additional_instructions=enhanced_context
+                        )
+                        shared_state["greeting_done"] = True  # Mark as done immediately
+                        logger.info("✅ Triggered greeting with context (single response.create call)")
 
                     elif event_name == "media":
                         if not call_session:
