@@ -449,8 +449,16 @@ jobs:
           echo "Waiting 30 seconds for staging deployment to stabilize..."
           sleep 30
 
+          # Get the actual FQDN from Azure (dynamic, not hardcoded)
+          FQDN=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }}-staging \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+
+          STAGING_URL="https://${FQDN}/healthz"
+          echo "Health check URL: $STAGING_URL"
+
           # Check if app is responding
-          STAGING_URL="https://voice-agents-bridge-staging.azurecontainerapps.io/healthz"
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $STAGING_URL || echo "000")
 
           if [ "$HTTP_STATUS" -eq 200 ]; then
@@ -538,8 +546,16 @@ jobs:
           echo "Waiting 60 seconds for production deployment to stabilize..."
           sleep 60
 
+          # Get the actual FQDN from Azure (dynamic, not hardcoded)
+          FQDN=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+
+          PROD_URL="https://${FQDN}/healthz"
+          echo "Health check URL: $PROD_URL"
+
           # Check if app is responding
-          PROD_URL="https://voice-agents-bridge.azurecontainerapps.io/healthz"
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" $PROD_URL || echo "000")
 
           if [ "$HTTP_STATUS" -eq 200 ]; then
