@@ -1399,15 +1399,34 @@ Stay focused on your current task in the call flow."""
 
         # Inject context after greeting completes (prevents race condition)
         # This happens only once - after the first response (greeting) is done
+        # Use conversation.item.create to add context WITHOUT triggering a response
         if shared_state and not shared_state.get("greeting_done", False):
             enhanced_context = shared_state.get("enhanced_context")
             if enhanced_context:
                 try:
-                    await voicelive_connection.response.create(
-                        additional_instructions=enhanced_context
-                    )
-                    shared_state["greeting_done"] = True
-                    logger.info("✅ Context injected after greeting completed (no race condition)")
+                    # Add context as a system message to conversation history
+                    # This does NOT trigger a response (unlike response.create)
+                    context_message = {
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "message",
+                            "role": "system",
+                            "content": [
+                                {
+                                    "type": "input_text",
+                                    "text": enhanced_context
+                                }
+                            ]
+                        }
+                    }
+
+                    # Send via raw WebSocket (SDK doesn't support system messages properly)
+                    if hasattr(voicelive_connection, 'send'):
+                        await voicelive_connection.send(context_message)
+                        shared_state["greeting_done"] = True
+                        logger.info("✅ Context injected as system message (no unwanted response)")
+                    else:
+                        logger.error("❌ Cannot access send method for context injection")
                 except Exception as e:
                     logger.error(f"❌ Error injecting context after greeting: {e}")
 
