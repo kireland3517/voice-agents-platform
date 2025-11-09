@@ -207,9 +207,6 @@ jobs:
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch'
 
-    outputs:
-      image-tag: ${{ steps.set-image.outputs.image }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -249,14 +246,6 @@ jobs:
             PYTHON_VERSION=${{ env.PYTHON_VERSION }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
-
-      - name: Set deployment image
-        id: set-image
-        run: |
-          # Use the SHA-based tag for deployment (most specific)
-          IMAGE="${{ env.REGISTRY_URL }}/${{ env.CONTAINER_APP_NAME }}:${{ github.ref_name }}-${{ github.sha }}"
-          echo "image=$IMAGE" >> $GITHUB_OUTPUT
-          echo "Deployment image: $IMAGE"
 
       - name: Image digest
         run: echo "Image pushed with digest ${{ steps.meta.outputs.digest }}"
@@ -418,7 +407,8 @@ jobs:
 
       - name: Deploy to Azure Container Apps (Staging)
         run: |
-          IMAGE="${{ needs.build.outputs.image-tag }}"
+          # Construct image tag from environment variables (avoids GitHub Actions masking issues)
+          IMAGE="${{ env.REGISTRY_URL }}/${{ env.CONTAINER_APP_NAME }}:${{ github.ref_name }}-$(echo ${{ github.sha }} | cut -c1-7)"
           echo "Deploying image: $IMAGE"
 
           # Check if container app exists
@@ -529,7 +519,8 @@ jobs:
       - name: Deploy to Azure Container Apps (Production)
         id: deploy-production
         run: |
-          IMAGE="${{ needs.build.outputs.image-tag }}"
+          # Construct image tag from environment variables (avoids GitHub Actions masking issues)
+          IMAGE="${{ env.REGISTRY_URL }}/${{ env.CONTAINER_APP_NAME }}:${{ github.ref_name }}-$(echo ${{ github.sha }} | cut -c1-7)"
           echo "Deploying image: $IMAGE"
 
           az containerapp update \
