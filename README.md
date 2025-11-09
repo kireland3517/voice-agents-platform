@@ -1,6 +1,6 @@
 # Azure Voice Live API - Voice Agent Platform
 
-**Version:** 21.0
+**Version:** 22.0
 **Status:** Production
 **Last Updated:** November 9, 2025
 
@@ -15,7 +15,7 @@ Customers call a phone number → Azure handles the call → AI agent (Sarah for
 **Key Features:**
 - ✅ Natural, human-like AI voice conversations
 - ✅ Real-time speech-to-text and text-to-speech
-- ✅ **Function calling** for surname verification and ZIP code lookup
+- ✅ **Function calling** for ZIP code verification and transfer availability
 - ✅ Per-company customization (voice, personality, business rules)
 - ✅ Business hours awareness with transfer logic
 - ✅ Call recording and transcription
@@ -31,7 +31,7 @@ Customers call a phone number → Azure handles the call → AI agent (Sarah for
 Phone Call → SignalWire → Azure Voice Live API → AI Processing → Voice Response
                 ↓                    ↓
          WebSocket Audio      Function Calling
-                                (Surname/ZIP)
+                              (ZIP/Transfer Check)
 ```
 
 ### Technology Stack
@@ -43,15 +43,32 @@ Phone Call → SignalWire → Azure Voice Live API → AI Processing → Voice R
 - **Storage:** Azure Blob Storage (instructions, recordings, transcripts)
 - **Config:** Azure App Configuration (per-company settings)
 - **Deployment:** Azure Container Apps
-- **Database:** SQLite (162K surnames), CSV (40K ZIP codes)
+- **Database:** CSV (40K ZIP codes)
 
 ---
 
-## 🚀 Current Version: 21.0
+## 🚀 Current Version: 22.0
+
+### What's New in v22.0
+
+**Sarah v15 Prompt** 🎉
+- Sparse bullet point pacing (•) for natural speech rhythm
+- Streamlined structure (30% shorter, all critical guidance retained)
+- Industry-compliant greeting preserved exactly
+- Address collection workflow integrated
+- Removed surname verification (function deprecated)
+- Updated to 2 functions: lookup_zipcode, transfer_window_check
+- Pre-function feedback patterns (no silent gaps)
+
+**Documentation Updates:**
+- Updated all function references to match actual implementation
+- Removed verify_surname from all documentation
+- Consolidated redundant sections across documents
+- Updated FUNCTION_CALLING.md for 2-function architecture
 
 ### What's New in v21.0
 
-**Automated Prompt Management** 🎉
+**Automated Prompt Management:**
 - GitHub Actions CI/CD for automated prompt uploads to Azure Blob Storage
 - Automated prompt versioning with git integration
 - Version archive system: `prompts/sarah-v{VERSION}-{description}.md`
@@ -64,45 +81,46 @@ Phone Call → SignalWire → Azure Voice Live API → AI Processing → Voice R
 - Cleanup scripts for future maintenance (cleanup.ps1, cleanup.sh)
 - Streamlined blob storage structure
 
-**Prompt Updates:**
-- Sarah v14: Natural phone number grouping (3-3-4 pattern)
-- Principles-based guidance for flexible, natural voice cadence
-- Removed exact word-for-word scripts for more conversational flow
-
 ---
 
 ## 📋 Function Calling
 
 ### Available Functions
 
-#### 1. `verify_surname`
-Verifies customer surname spelling using phonetic matching.
+#### 1. `lookup_zipcode`
+Validates ZIP code and returns city/state for confirmation.
 
-**Example:**
-```
-Customer: "My last name is Smith"
-AI: Calls verify_surname("Smith")
-Result: {status: "multiple", options: ["SMITH", "SMYTH"]}
-AI: "Is that spelled S-M-I-T-H or S-M-Y-T-H?"
-```
-
-#### 2. `lookup_zipcode`
-Validates ZIP code and confirms city/state.
+**Parameters:** `zipcode` (string) - 5-digit ZIP code
 
 **Example:**
 ```
 Customer: "My ZIP code is 22030"
+AI: Says "Let me confirm that ZIP code for you."
 AI: Calls lookup_zipcode("22030")
 Result: {found: true, city: "Fairfax", state: "Virginia"}
-AI: "So that's Fairfax, Virginia, correct?"
+AI: "And that's Fairfax, • Virginia, • correct?"
+```
+
+#### 2. `transfer_window_check`
+Checks if licensed agents are currently available for transfer based on business hours.
+
+**Parameters:** None (uses current date/time internally)
+
+**Example:**
+```
+AI: Says "One moment checking availability."
+AI: Calls transfer_window_check()
+Result: {available: true, reason: "Within business hours"}
+AI: Proceeds with live transfer to licensed agent
 ```
 
 ### How It Works
 
 1. **SDK Detection:** Voice Live API fires `response.function_call_arguments.done` event
-2. **Execution:** Python function executes locally (database lookup)
-3. **SDK Bypass:** Raw WebSocket message sent directly to API
-4. **AI Response:** Cedar uses the result in conversation
+2. **Pre-Function Feedback:** Sarah says brief message ("Let me confirm that ZIP code for you.")
+3. **Execution:** Python function executes locally (database lookup or time check)
+4. **SDK Bypass:** Raw WebSocket message sent directly to API
+5. **AI Response:** Sarah uses the result in conversation
 
 **Note:** We bypass the Azure Voice Live SDK for function outputs due to SDK limitations. See [FUNCTION_CALLING.md](FUNCTION_CALLING.md) for details.
 
@@ -114,15 +132,15 @@ AI: "So that's Fairfax, Virginia, correct?"
 voice-agents-platform/
 ├── app.py                           # Main application (Quart server, WebSocket handling)
 ├── config.py                        # Configuration manager (Azure App Config, Blob Storage)
-├── surname_verifier.py              # Surname verification service (162K database)
 ├── zipcode_service.py               # ZIP code lookup service (40K entries)
 ├── call_session.py                  # Call session tracking
 │
-├── sarah_instructions_senior_life.md # Current production prompt (v14)
+├── sarah_instructions_senior_life.md # Current production prompt (v15)
 ├── prompts/                         # Versioned prompt archives
 │   ├── README.md                    # Prompt management guide
 │   ├── sarah-v13-exact-scripts.md   # v13 archive
-│   └── sarah-v14-changed-from...md  # v14 archive (auto-generated)
+│   ├── sarah-v14-changed-from...md  # v14 archive (auto-generated)
+│   └── sarah-v15-sparse-bullet...md # v15 archive (auto-generated)
 │
 ├── .github/workflows/               # CI/CD automation
 │   └── deploy-to-azure.yml          # Automated deployments & prompt uploads
@@ -132,6 +150,8 @@ voice-agents-platform/
 ├── pyrightconfig.json               # VSCode Pylance configuration
 │
 ├── FUNCTION_CALLING.md              # Function calling architecture & SDK bypass
+├── BARGE_IN_IMPLEMENTATION.md       # Barge-in fix implementation guide
+├── SARAH_V15_RECOMMENDATIONS.md     # Sarah v15 prompt improvements (Call-GPT/Pipecat research)
 ├── ARCHITECTURE_DIAGRAMS.md         # Mermaid diagrams (12 diagrams)
 ├── Technical_Architecture.md        # Detailed technical documentation
 │
@@ -354,6 +374,7 @@ For issues or questions:
 ---
 
 **Version History:**
+- v22.0 (Nov 9, 2025) - Sarah v15 prompt (sparse bullet pacing, streamlined, address collection), removed verify_surname, 2-function architecture, documentation overhaul
 - v21.0 (Nov 9, 2025) - Automated prompt management, GitHub Actions CI/CD, Azure Blob Versioning, workspace cleanup (Ch84)
 - v20.0 (Nov 1, 2025) - Function calling via SDK bypass, production optimizations
 - v19.x (Oct 31, 2025) - Function calling iterations, transcription fixes

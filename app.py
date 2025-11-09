@@ -77,6 +77,14 @@ def get_cached_config(company_id: str):
     cache_key = int(time() // 300)  # Cache expires every 5 minutes
     return _get_company_config_cached(company_id, cache_key)
 
+# ──────────────────────────────────────────────────────────────────────────────
+# FUNCTION FEEDBACK MESSAGES (Pre-function verbal feedback)
+# ──────────────────────────────────────────────────────────────────────────────
+FUNCTION_FEEDBACK = {
+    "lookup_zipcode": "Let me confirm that ZIP code for you.",
+    "transfer_window_check": "One moment checking availability."
+}
+
 if not (AZURE_AI_ENDPOINT and AZURE_AI_KEY):
     logger.error("Missing required environment variables")
     raise ValueError("AZURE_AI_ENDPOINT and AZURE_AI_KEY are required")
@@ -1429,6 +1437,15 @@ Stay focused on your current task in the call flow."""
             if monitor:
                 monitor.add_function_call(function_name)
 
+            # NEW: Send pre-function feedback message
+            if function_name in FUNCTION_FEEDBACK:
+                try:
+                    feedback_msg = FUNCTION_FEEDBACK[function_name]
+                    await voicelive_connection.send_text(feedback_msg)
+                    logger.info(f"💬 Pre-function feedback: '{feedback_msg}'")
+                except Exception as e:
+                    logger.warning(f"Failed to send pre-function feedback: {e}")
+
             # Execute the function
             result = await execute_function(function_name, arguments)
             logger.info(f"   Function result: {result}")
@@ -1514,6 +1531,15 @@ Stay focused on your current task in the call flow."""
                         # Track function call
                         if monitor:
                             monitor.add_function_call(function_name)
+
+                        # NEW: Send pre-function feedback message
+                        if function_name in FUNCTION_FEEDBACK:
+                            try:
+                                feedback_msg = FUNCTION_FEEDBACK[function_name]
+                                await voicelive_connection.send_text(feedback_msg)
+                                logger.info(f"💬 Pre-function feedback: '{feedback_msg}' (Method 2)")
+                            except Exception as e:
+                                logger.warning(f"Failed to send pre-function feedback (Method 2): {e}")
 
                         result = await execute_function(function_name, arguments)
                         logger.info(f"   Function result: {result}")
