@@ -344,6 +344,18 @@ jobs:
             && echo "✅ Current version uploaded successfully!" \
             || echo "⚠️ Current version upload failed"
 
+          # Upload test-basic instructions
+          echo "Uploading test-basic instructions (test_basic_instructions.md)..."
+          az storage blob upload \
+            --account-name voiceagentsinstructions \
+            --container-name agent-instructions \
+            --name test_basic_instructions.md \
+            --file test_basic_instructions.md \
+            --auth-mode login \
+            --overwrite \
+            && echo "✅ Test-basic instructions uploaded successfully!" \
+            || echo "⚠️ Test-basic instructions upload failed"
+
           # Upload versioned archive
           echo "Uploading versioned archive (${{ env.PROMPT_ARCHIVE }})..."
           az storage blob upload \
