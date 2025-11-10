@@ -1,10 +1,10 @@
 ---
 PROMPT METADATA
-Version: 17.4
-Last Updated: 2025-11-09
-Changes: Fixed invalid token bug - removed recovery mechanism causing cascading token generation
+Version: 17.5
+Last Updated: 2025-11-10
+Changes: Added clean recovery after invalid token suppression
 Git Commit: <will be filled automatically>
-Previous Versions: v17.3 (voice inflection), v17.2 (barge-in fix), v17.1 (recap)
+Previous Versions: v17.4 (invalid token suppression), v17.3 (voice inflection), v17.2 (barge-in fix)
 ---
 
 Identity & Role

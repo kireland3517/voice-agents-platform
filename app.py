@@ -1096,6 +1096,7 @@ class ResponseTracker:
         self.suppressed_audio_count = 0
         self.has_invalid_token = False  # Track if response contains invalid token
         self.transcript_buffer = ""  # Buffer to accumulate transcript deltas
+        self.recovery_attempted = False  # Prevent double recovery after invalid token suppression
 
     def start_response(self):
         """Reset for new response"""
@@ -1103,6 +1104,7 @@ class ResponseTracker:
         self.suppressed_audio_count = 0
         self.has_invalid_token = False
         self.transcript_buffer = ""  # Reset buffer
+        self.recovery_attempted = False  # Reset recovery flag
 
     def add_transcript_delta(self, delta_text: str):
         """Add transcript delta and check for invalid tokens"""
@@ -1405,6 +1407,22 @@ async def handle_voicelive_event(
 
         # Log if we suppressed audio-only chunks
         response_tracker.log_suppression()
+
+        # Clean recovery after invalid token suppression (v17.5)
+        if (response_tracker.has_invalid_token and
+            response_tracker.suppressed_audio_count > 0 and
+            not response_tracker.recovery_attempted):
+
+            logger.warning(f"⚠️ Response contained {response_tracker.suppressed_audio_count} suppressed chunks - triggering clean recovery")
+            response_tracker.recovery_attempted = True
+
+            try:
+                await asyncio.sleep(0.5)  # Brief pause to ensure response fully complete
+                await voicelive_connection.response.create()
+                logger.info("✅ Triggered clean response.create() after invalid token suppression")
+            except Exception as e:
+                logger.error(f"❌ Failed to trigger recovery response: {e}")
+
         # Context is now injected WITH greeting (single response.create call)
         # No separate context injection needed here
 
