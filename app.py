@@ -1357,7 +1357,7 @@ Stay focused on your current task in the call flow."""
             logger.warning(f"Failed to cancel response: {e}")
 
         # ACTION 3: Inject context system message for conversational recovery
-        # Use raw WebSocket bypass (SDK doesn't support 'role' parameter)
+        # Use SDK's send method directly (same pattern as function calling)
         try:
             raw_message = {
                 "type": "conversation.item.create",
@@ -1368,13 +1368,15 @@ Stay focused on your current task in the call flow."""
                 }
             }
 
-            # Access the underlying WebSocket connection
-            ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
-            if ws:
-                await ws.send(json.dumps(raw_message))
-                logger.info("💬 ACTION 3: Injected interruption context system message via raw WebSocket")
+            # Use SDK's send method (send dict, not JSON string)
+            if hasattr(voicelive_connection, 'send'):
+                await voicelive_connection.send(raw_message)
+                logger.info("💬 ACTION 3: Injected interruption context via connection.send()")
+            elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
+                await voicelive_connection._connection.send(raw_message)
+                logger.info("💬 ACTION 3: Injected interruption context via _connection.send()")
             else:
-                logger.warning("⚠️ Could not access WebSocket for context injection")
+                logger.warning("⚠️ Could not access send method for context injection")
         except Exception as e:
             logger.warning(f"Failed to inject context: {e}")
 
