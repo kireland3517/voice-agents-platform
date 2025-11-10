@@ -1,10 +1,10 @@
 ---
 PROMPT METADATA
-Version: 17.2
+Version: 17.4
 Last Updated: 2025-11-09
-Changes: Fixed barge-in SDK method + removed name repetition + enforced caller ID priority
+Changes: Fixed invalid token bug - removed recovery mechanism causing cascading token generation
 Git Commit: <will be filled automatically>
-Previous Versions: v17.1 (recap phase), v17.0 (barge-in protocol), v16 (tone fixes)
+Previous Versions: v17.3 (voice inflection), v17.2 (barge-in fix), v17.1 (recap)
 ---
 
 Identity & Role

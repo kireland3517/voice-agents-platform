@@ -5,6 +5,7 @@ import logging
 import base64
 import wave
 import io
+import re
 from typing import Optional, List, Dict, Any
 from datetime import datetime, UTC
 import traceback
@@ -1107,8 +1108,9 @@ class ResponseTracker:
         """Add transcript delta and check for invalid tokens"""
         self.transcript_buffer += delta_text
 
-        # Check if the accumulated buffer contains invalid token
-        if "<|audio_text|>" in self.transcript_buffer or "<|end_of_text|>" in self.transcript_buffer:
+        # Check if the accumulated buffer contains invalid token using regex to catch all variants
+        # Pattern: <|anything|> format (e.g., <|audio_text|>, <|text_hbr_audio|>, <|end_of_text|>)
+        if re.search(r'<\|[^|]+\|>', self.transcript_buffer):
             logger.error(f"🚨 INVALID TOKEN DETECTED IN TRANSCRIPT BUFFER: '{self.transcript_buffer}'")
             self.has_invalid_token = True
             return True  # Signal that invalid token was found
@@ -1164,26 +1166,11 @@ async def handle_voicelive_event(
         if hasattr(event, 'delta') and event.delta:
             # Add to buffer and check for invalid tokens
             if response_tracker.add_transcript_delta(str(event.delta)):
-                # Invalid token detected! Trigger recovery to prevent silence
-                logger.error("🚨 INVALID TOKEN IN DELTA - Triggering recovery response")
-
-                # Trigger a recovery response to continue naturally
-                try:
-                    if hasattr(voicelive_connection, 'response'):
-                        asyncio.create_task(
-                            voicelive_connection.response.create(
-                                additional_instructions="""RECOVERY MODE: Invalid response detected.
-
-The caller just provided information. Continue collecting the next required field naturally.
-Do NOT repeat what they just said. Move directly to the next question in your workflow.
-
-If you were collecting phone/email/address, continue to the next field."""
-                            )
-                        )
-                        logger.info("✅ Recovery response triggered for invalid transcript token")
-                except Exception as recovery_err:
-                    logger.error(f"❌ Failed to trigger recovery: {recovery_err}")
-
+                # Invalid token detected! Suppress audio and log
+                logger.error("🚨 INVALID TOKEN IN DELTA - Audio will be suppressed")
+                # Don't trigger recovery - it creates more invalid tokens
+                # Suppression will prevent audio from playing
+                # Natural conversation will resume when user speaks
                 return
             # Don't log individual delta characters/words - too noisy
             return  # Skip further processing for delta events
@@ -1198,31 +1185,16 @@ If you were collecting phone/email/address, continue to the next field."""
             transcript_text = event.content
 
         if transcript_text:
-            # Filter out invalid tokens from transcript (especially <|audio_text|>)
-            INVALID_TOKENS = {"<|audio_text|>", "<|end_of_text|>", "null", ""}
+            # Filter out invalid tokens from transcript using regex to catch all variants
+            # Pattern matches: <|audio_text|>, <|text_hbr_audio|>, <|end_of_text|>, etc.
+            INVALID_TOKENS = {"null", ""}
 
-            # Check for invalid token
-            if "<|audio_text|>" in str(transcript_text):
-                logger.error(f"🚨 DETECTED INVALID TOKEN '<|audio_text|>' - Triggering recovery")
+            # Check for invalid token using regex
+            if re.search(r'<\|[^|]+\|>', str(transcript_text)):
+                logger.error(f"🚨 DETECTED INVALID TOKEN IN TRANSCRIPT: '{transcript_text}'")
                 response_tracker.mark_invalid_token()
-
-                # Trigger recovery if not already triggered
-                try:
-                    if hasattr(voicelive_connection, 'response'):
-                        asyncio.create_task(
-                            voicelive_connection.response.create(
-                                additional_instructions="""RECOVERY MODE: Invalid response detected.
-
-The caller just provided information. Continue collecting the next required field naturally.
-Do NOT repeat what they just said. Move directly to the next question in your workflow.
-
-If you were collecting phone/email/address, continue to the next field."""
-                            )
-                        )
-                        logger.info("✅ Recovery response triggered for invalid transcript.done token")
-                except Exception as recovery_err:
-                    logger.error(f"❌ Failed to trigger recovery: {recovery_err}")
-
+                # Don't trigger recovery - it creates more invalid tokens
+                # Suppression will prevent audio from playing
                 return  # Don't process this event further
 
             if transcript_text.strip() not in INVALID_TOKENS:
@@ -1246,34 +1218,14 @@ If you were collecting phone/email/address, continue to the next field."""
             response_text = event.text
 
         if response_text and isinstance(response_text, str):
-            # Filter out invalid LLM tokens that should not be spoken
-            INVALID_TOKENS = {"<|audio_text|>", "<|end_of_text|>", "null", ""}
-            if response_text.strip() in INVALID_TOKENS or "<|audio_text|>" in response_text:
-                logger.warning(f"🚫 DETECTED INVALID TOKEN: '{response_text}' - Triggering recovery")
-
-                # Trigger a recovery response to prevent audio-only output
-                # This happens when caller makes side comments or conversational asides
-                try:
-                    # Cancel the current response that's generating invalid tokens
-                    if hasattr(voicelive_connection, 'response'):
-                        # Trigger a new response with instructions to continue naturally
-                        asyncio.create_task(
-                            voicelive_connection.response.create(
-                                additional_instructions="""RECOVERY MODE: You just attempted to generate an invalid response.
-
-The caller may have made a side comment or conversational aside.
-Please continue collecting the information you need naturally.
-
-If you just asked for information (phone, address, etc.), politely say:
-"I want to make sure I get that correctly - could you repeat that for me?"
-
-Stay focused on your current task in the call flow."""
-                            )
-                        )
-                        logger.info("✅ Recovery response triggered for invalid token")
-                except Exception as recovery_err:
-                    logger.error(f"❌ Failed to trigger recovery: {recovery_err}")
-
+            # Filter out invalid LLM tokens that should not be spoken using regex
+            # Pattern matches: <|audio_text|>, <|text_hbr_audio|>, <|end_of_text|>, etc.
+            INVALID_TOKENS = {"null", ""}
+            if response_text.strip() in INVALID_TOKENS or re.search(r'<\|[^|]+\|>', response_text):
+                logger.warning(f"🚫 DETECTED INVALID TOKEN IN TEXT DELTA: '{response_text}'")
+                response_tracker.mark_invalid_token()
+                # Don't trigger recovery - it creates more invalid tokens
+                # Suppression will prevent audio from playing
                 # Don't log or process this text further
                 # DON'T mark as having text - this is an invalid token
             else:
