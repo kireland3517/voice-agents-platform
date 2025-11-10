@@ -1003,7 +1003,8 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         "monitor": SessionMonitor(company_id),  # Add session monitor
         "query_caller_id": query_caller_id,  # Caller ID from URL query parameters
         "greeting_done": False,  # Track when greeting completes (prevents race condition)
-        "enhanced_context": None  # Store context for injection after greeting
+        "enhanced_context": None,  # Store context for injection after greeting
+        "company_id": company_id  # Add company_id for conditional logic
     }
     voicelive_connection = None
     heartbeat_task = None
@@ -1161,24 +1162,36 @@ async def handle_voicelive_event(
     logger.debug(f"📥 Voice Live event: {event.type}")
 
     # ──────────────────────────────────────────────────────────────────────
+    # COMPANY-SPECIFIC BEHAVIOR CONTROL
+    # ──────────────────────────────────────────────────────────────────────
+    # Determine if using minimal mode (test-basic company)
+    company_id = shared_state.get("company_id") if shared_state else None
+    is_minimal = (company_id == "test-basic")
+
+    if is_minimal:
+        logger.debug("🔧 Minimal mode active - bypassing complex logic")
+
+    # ──────────────────────────────────────────────────────────────────────
     # TRANSCRIPT LOGGING
     # ──────────────────────────────────────────────────────────────────────
     # Log user speech transcripts
     event_type_str = str(event.type)
 
     # Special handling for response.audio_transcript.delta - check for invalid tokens character by character
-    if event_type_str == 'ServerEventType.RESPONSE_AUDIO_TRANSCRIPT_DELTA' or 'audio_transcript.delta' in event_type_str.lower():
-        if hasattr(event, 'delta') and event.delta:
-            # Add to buffer and check for invalid tokens
-            if response_tracker.add_transcript_delta(str(event.delta)):
-                # Invalid token detected! Suppress audio and log
-                logger.error("🚨 INVALID TOKEN IN DELTA - Audio will be suppressed")
-                # Don't trigger recovery - it creates more invalid tokens
-                # Suppression will prevent audio from playing
-                # Natural conversation will resume when user speaks
-                return
-            # Don't log individual delta characters/words - too noisy
-            return  # Skip further processing for delta events
+    # ONLY for non-minimal mode (test-basic skips this complexity)
+    if not is_minimal:
+        if event_type_str == 'ServerEventType.RESPONSE_AUDIO_TRANSCRIPT_DELTA' or 'audio_transcript.delta' in event_type_str.lower():
+            if hasattr(event, 'delta') and event.delta:
+                # Add to buffer and check for invalid tokens
+                if response_tracker.add_transcript_delta(str(event.delta)):
+                    # Invalid token detected! Suppress audio and log
+                    logger.error("🚨 INVALID TOKEN IN DELTA - Audio will be suppressed")
+                    # Don't trigger recovery - it creates more invalid tokens
+                    # Suppression will prevent audio from playing
+                    # Natural conversation will resume when user speaks
+                    return
+                # Don't log individual delta characters/words - too noisy
+                return  # Skip further processing for delta events
 
     if 'transcription' in event_type_str.lower() or 'transcript' in event_type_str.lower():
         transcript_text = None
@@ -1190,53 +1203,61 @@ async def handle_voicelive_event(
             transcript_text = event.content
 
         if transcript_text:
-            # Filter out invalid tokens from transcript using regex to catch all variants
+            # Filter out invalid tokens from transcript (ONLY in non-minimal mode)
             # Pattern matches: <|audio_text|>, <|text_hbr_audio|>, <|end_of_text|>, etc.
-            INVALID_TOKENS = {"null", ""}
+            if not is_minimal:
+                INVALID_TOKENS = {"null", ""}
 
-            # Check for invalid token using regex
-            if re.search(r'<\|[^|]+\|>', str(transcript_text)):
-                logger.error(f"🚨 DETECTED INVALID TOKEN IN TRANSCRIPT: '{transcript_text}'")
-                response_tracker.mark_invalid_token()
-                # Don't trigger recovery - it creates more invalid tokens
-                # Suppression will prevent audio from playing
-                return  # Don't process this event further
+                # Check for invalid token using regex
+                if re.search(r'<\|[^|]+\|>', str(transcript_text)):
+                    logger.error(f"🚨 DETECTED INVALID TOKEN IN TRANSCRIPT: '{transcript_text}'")
+                    response_tracker.mark_invalid_token()
+                    # Don't trigger recovery - it creates more invalid tokens
+                    # Suppression will prevent audio from playing
+                    return  # Don't process this event further
 
-            if transcript_text.strip() not in INVALID_TOKENS:
-                # Note: This could be user OR assistant transcript depending on event type
+                if transcript_text.strip() not in INVALID_TOKENS:
+                    # Note: This could be user OR assistant transcript depending on event type
+                    logger.info(f"📝 TRANSCRIPT: {transcript_text}")
+
+                    # Save transcript to session
+                    if call_session:
+                        # Determine speaker based on event type
+                        speaker = "assistant" if "response" in event_type_str.lower() else "user"
+                        call_session.add_transcript_entry(speaker, transcript_text)
+                else:
+                    logger.warning(f"🚫 FILTERED INVALID TOKEN: '{transcript_text}'")
+            else:
+                # Minimal mode: just log and save transcript, no filtering
                 logger.info(f"📝 TRANSCRIPT: {transcript_text}")
-
-                # Save transcript to session
                 if call_session:
-                    # Determine speaker based on event type
                     speaker = "assistant" if "response" in event_type_str.lower() else "user"
                     call_session.add_transcript_entry(speaker, transcript_text)
-            else:
-                logger.warning(f"🚫 FILTERED INVALID TOKEN: '{transcript_text}'")
 
-    # Log AI response text and filter invalid tokens
-    if 'text' in event_type_str.lower() and 'delta' in event_type_str.lower():
-        response_text = None
-        if hasattr(event, 'delta'):
-            response_text = event.delta
-        elif hasattr(event, 'text'):
-            response_text = event.text
+    # Log AI response text and filter invalid tokens (ONLY in non-minimal mode)
+    if not is_minimal:
+        if 'text' in event_type_str.lower() and 'delta' in event_type_str.lower():
+            response_text = None
+            if hasattr(event, 'delta'):
+                response_text = event.delta
+            elif hasattr(event, 'text'):
+                response_text = event.text
 
-        if response_text and isinstance(response_text, str):
-            # Filter out invalid LLM tokens that should not be spoken using regex
-            # Pattern matches: <|audio_text|>, <|text_hbr_audio|>, <|end_of_text|>, etc.
-            INVALID_TOKENS = {"null", ""}
-            if response_text.strip() in INVALID_TOKENS or re.search(r'<\|[^|]+\|>', response_text):
-                logger.warning(f"🚫 DETECTED INVALID TOKEN IN TEXT DELTA: '{response_text}'")
-                response_tracker.mark_invalid_token()
-                # Don't trigger recovery - it creates more invalid tokens
-                # Suppression will prevent audio from playing
-                # Don't log or process this text further
-                # DON'T mark as having text - this is an invalid token
-            else:
-                logger.info(f"💬 AI RESPONSE TEXT: {response_text}")
-                # Mark that valid text was received for this response
-                response_tracker.mark_text_received()
+            if response_text and isinstance(response_text, str):
+                # Filter out invalid LLM tokens that should not be spoken using regex
+                # Pattern matches: <|audio_text|>, <|text_hbr_audio|>, <|end_of_text|>, etc.
+                INVALID_TOKENS = {"null", ""}
+                if response_text.strip() in INVALID_TOKENS or re.search(r'<\|[^|]+\|>', response_text):
+                    logger.warning(f"🚫 DETECTED INVALID TOKEN IN TEXT DELTA: '{response_text}'")
+                    response_tracker.mark_invalid_token()
+                    # Don't trigger recovery - it creates more invalid tokens
+                    # Suppression will prevent audio from playing
+                    # Don't log or process this text further
+                    # DON'T mark as having text - this is an invalid token
+                else:
+                    logger.info(f"💬 AI RESPONSE TEXT: {response_text}")
+                    # Mark that valid text was received for this response
+                    response_tracker.mark_text_received()
 
     # Log content parts (might contain text)
     if 'content_part' in event_type_str.lower() or 'output_item' in event_type_str.lower():
@@ -1289,83 +1310,92 @@ async def handle_voicelive_event(
         logger.info(f"✅ {company_name} Voice Live session ready")
 
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
-        # v17.6: Check if this is REAL barge-in or normal turn-taking
-        if call_session and call_session.agent_is_speaking:
-            logger.info("🎤 REAL BARGE-IN: Caller interrupting Sarah - executing cancellation")
+        # BARGE-IN HANDLING: Only for non-minimal mode
+        if not is_minimal:
+            # v17.6: Check if this is REAL barge-in or normal turn-taking
+            if call_session and call_session.agent_is_speaking:
+                logger.info("🎤 REAL BARGE-IN: Caller interrupting Sarah - executing cancellation")
 
-            # ══════════════════════════════════════════════════════════════════
-            # TRIPLE-ACTION BARGE-IN PATTERN (Distributed Cancellation)
-            # ══════════════════════════════════════════════════════════════════
+                # ══════════════════════════════════════════════════════════════════
+                # TRIPLE-ACTION BARGE-IN PATTERN (Distributed Cancellation)
+                # ══════════════════════════════════════════════════════════════════
 
-            # ACTION 1: Clear SignalWire audio buffer (stops playback immediately)
-            if stream_sid and signalwire_ws.application_state == WebSocketState.CONNECTED:
+                # ACTION 1: Clear SignalWire audio buffer (stops playback immediately)
+                if stream_sid and signalwire_ws.application_state == WebSocketState.CONNECTED:
+                    try:
+                        await signalwire_ws.send_json({
+                            "event": "clear",
+                            "streamSid": stream_sid
+                        })
+                        logger.info("🔇 ACTION 1: Sent CLEAR to SignalWire - flushed audio buffer")
+                    except Exception as e:
+                        logger.warning(f"Failed to clear SignalWire buffer: {e}")
+
+                # ACTION 2: Cancel Azure response generation
                 try:
-                    await signalwire_ws.send_json({
-                        "event": "clear",
-                        "streamSid": stream_sid
-                    })
-                    logger.info("🔇 ACTION 1: Sent CLEAR to SignalWire - flushed audio buffer")
+                    await voicelive_connection.response.cancel()
+                    logger.info("🛑 ACTION 2: Sent response.cancel to Azure")
                 except Exception as e:
-                    logger.warning(f"Failed to clear SignalWire buffer: {e}")
+                    logger.warning(f"Failed to cancel response: {e}")
 
-            # ACTION 2: Cancel Azure response generation
-            try:
-                await voicelive_connection.response.cancel()
-                logger.info("🛑 ACTION 2: Sent response.cancel to Azure")
-            except Exception as e:
-                logger.warning(f"Failed to cancel response: {e}")
-
-            # ACTION 3: Inject context system message for conversational recovery
-            # Use SDK's send method directly (same pattern as function calling)
-            try:
-                raw_message = {
-                    "type": "conversation.item.create",
-                    "item": {
-                        "type": "message",
-                        "role": "system",
-                        "content": [{"type": "input_text", "text": "SYSTEM: User interrupted. Stop previous task. Acknowledge and listen."}]
+                # ACTION 3: Inject context system message for conversational recovery
+                # Use SDK's send method directly (same pattern as function calling)
+                try:
+                    raw_message = {
+                        "type": "conversation.item.create",
+                        "item": {
+                            "type": "message",
+                            "role": "system",
+                            "content": [{"type": "input_text", "text": "SYSTEM: User interrupted. Stop previous task. Acknowledge and listen."}]
+                        }
                     }
-                }
 
-                # Use SDK's send method (send dict, not JSON string)
-                if hasattr(voicelive_connection, 'send'):
-                    await voicelive_connection.send(raw_message)
-                    logger.info("💬 ACTION 3: Injected interruption context via connection.send()")
-                elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
-                    await voicelive_connection._connection.send(raw_message)
-                    logger.info("💬 ACTION 3: Injected interruption context via _connection.send()")
-                else:
-                    logger.warning("⚠️ Could not access send method for context injection")
-            except Exception as e:
-                logger.warning(f"Failed to inject context: {e}")
+                    # Use SDK's send method (send dict, not JSON string)
+                    if hasattr(voicelive_connection, 'send'):
+                        await voicelive_connection.send(raw_message)
+                        logger.info("💬 ACTION 3: Injected interruption context via connection.send()")
+                    elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
+                        await voicelive_connection._connection.send(raw_message)
+                        logger.info("💬 ACTION 3: Injected interruption context via _connection.send()")
+                    else:
+                        logger.warning("⚠️ Could not access send method for context injection")
+                except Exception as e:
+                    logger.warning(f"Failed to inject context: {e}")
 
-            # Clear flag immediately (response was cancelled)
-            call_session.agent_is_speaking = False
-            logger.debug("🔇 Agent speaking flag CLEARED (interrupted)")
+                # Clear flag immediately (response was cancelled)
+                call_session.agent_is_speaking = False
+                logger.debug("🔇 Agent speaking flag CLEARED (interrupted)")
 
+            else:
+                # Normal turn-taking: Sarah finished, user responding naturally
+                logger.info("🎤 User started speaking (normal turn-taking, no interruption)")
         else:
-            # Normal turn-taking: Sarah finished, user responding naturally
-            logger.info("🎤 User started speaking (normal turn-taking, no interruption)")
+            # Minimal mode: just log that user started speaking
+            logger.info("🎤 User started speaking (minimal mode - no barge-in logic)")
 
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
         logger.info("🎤 Caller stopped speaking")
 
-        # GRACE PERIOD: Wait 500ms for transcript to arrive before AI responds
-        # This prevents race condition where AI responds before hearing the transcript
-        # Evidence from production: transcript takes ~360ms to arrive after VAD stops
-        logger.info("⏳ Waiting 500ms grace period for transcript...")
-        await asyncio.sleep(0.5)
-        logger.info("✅ Grace period complete, transcript should be available")
+        # GRACE PERIOD: Only in non-minimal mode
+        if not is_minimal:
+            # Wait 500ms for transcript to arrive before AI responds
+            # This prevents race condition where AI responds before hearing the transcript
+            # Evidence from production: transcript takes ~360ms to arrive after VAD stops
+            logger.info("⏳ Waiting 500ms grace period for transcript...")
+            await asyncio.sleep(0.5)
+            logger.info("✅ Grace period complete, transcript should be available")
 
     elif event.type == ServerEventType.RESPONSE_CREATED:
         logger.info(f"🤖 {company_name} AI responding")
-        # Reset response tracker for new response
-        response_tracker.start_response()
 
-        # Mark agent as speaking (v17.6 - for barge-in detection)
-        if call_session:
-            call_session.agent_is_speaking = True
-            logger.debug("🔊 Agent speaking flag SET")
+        # Reset response tracker for new response (ONLY in non-minimal mode)
+        if not is_minimal:
+            response_tracker.start_response()
+
+            # Mark agent as speaking (v17.6 - for barge-in detection)
+            if call_session:
+                call_session.agent_is_speaking = True
+                logger.debug("🔊 Agent speaking flag SET")
 
     elif event.type == ServerEventType.RESPONSE_AUDIO_DELTA:
         if signalwire_ws.application_state != WebSocketState.CONNECTED:
@@ -1376,18 +1406,20 @@ async def handle_voicelive_event(
         if not audio_bytes:
             return
 
-        # CRITICAL: Check if we should suppress this audio (invalid token detected)
-        # This prevents "<|audio_text|>" from being spoken out loud
-        if response_tracker.has_invalid_token:
-            response_tracker.suppress_audio()
-            logger.warning("🚫 SUPPRESSING AUDIO CHUNK - Invalid token detected (preventing 'audio underscore text' speech)")
-            return
+        # CRITICAL: Audio suppression for invalid tokens (ONLY in non-minimal mode)
+        if not is_minimal:
+            # Check if we should suppress this audio (invalid token detected)
+            # This prevents "<|audio_text|>" from being spoken out loud
+            if response_tracker.has_invalid_token:
+                response_tracker.suppress_audio()
+                logger.warning("🚫 SUPPRESSING AUDIO CHUNK - Invalid token detected (preventing 'audio underscore text' speech)")
+                return
 
-        # Additional safety check: If this is string data instead of bytes, it's likely a token
-        if isinstance(audio_bytes, str):
-            logger.warning(f"🚫 SUPPRESSING STRING AUDIO DATA: '{audio_bytes}' (expected bytes)")
-            response_tracker.mark_invalid_token()
-            return
+            # Additional safety check: If this is string data instead of bytes, it's likely a token
+            if isinstance(audio_bytes, str):
+                logger.warning(f"🚫 SUPPRESSING STRING AUDIO DATA: '{audio_bytes}' (expected bytes)")
+                response_tracker.mark_invalid_token()
+                return
 
         # Convert bytes to base64 for SignalWire
         audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
@@ -1409,8 +1441,9 @@ async def handle_voicelive_event(
 
     elif event.type == ServerEventType.RESPONSE_AUDIO_DONE:
         logger.info(f"🤖 {company_name} finished speaking")
-        # Log if we suppressed audio-only chunks
-        response_tracker.log_suppression()
+        # Log if we suppressed audio-only chunks (ONLY in non-minimal mode)
+        if not is_minimal:
+            response_tracker.log_suppression()
 
     elif event.type == ServerEventType.RESPONSE_DONE:
         # Check if response was cancelled or completed normally
@@ -1423,13 +1456,15 @@ async def handle_voicelive_event(
         else:
             logger.info("✅ Response complete")
 
-        # Mark agent as not speaking (v17.6 - for barge-in detection)
-        if call_session:
-            call_session.agent_is_speaking = False
-            logger.debug("🔇 Agent speaking flag CLEARED")
+        # Mark agent as not speaking and log suppression (ONLY in non-minimal mode)
+        if not is_minimal:
+            # Mark agent as not speaking (v17.6 - for barge-in detection)
+            if call_session:
+                call_session.agent_is_speaking = False
+                logger.debug("🔇 Agent speaking flag CLEARED")
 
-        # Log if we suppressed audio-only chunks
-        response_tracker.log_suppression()
+            # Log if we suppressed audio-only chunks
+            response_tracker.log_suppression()
 
         # Context is now injected WITH greeting (single response.create call)
         # No separate context injection needed here

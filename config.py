@@ -49,26 +49,28 @@ class ConfigManager:
         if not self.blob_service_client:
             logger.warning("Blob Storage not configured - skipping detailed instructions")
             return None
-        
+
         try:
             # UPDATED: Use sarah_instructions_senior_life.md for Sarah voice agent
             if company_id == "senior-life":
                 blob_name = "sarah_instructions_senior_life.md"
+            elif company_id == "test-basic":
+                blob_name = "test_basic_instructions.md"
             else:
                 # Fallback pattern for other companies
                 blob_name = f"{company_id}-instructions.txt"
-                
+
             blob_client = self.blob_service_client.get_blob_client(
                 container=self.instructions_container,
                 blob=blob_name
             )
-            
+
             blob_data = blob_client.download_blob()
             instructions_text = blob_data.readall().decode('utf-8')
-            
+
             logger.info(f"Successfully loaded detailed instructions for {company_id} from Blob Storage ({blob_name})")
             return instructions_text
-            
+
         except Exception as e:
             logger.warning(f"Could not load detailed instructions for {company_id}: {e}")
             return None
@@ -137,11 +139,55 @@ class ConfigManager:
             logger.warning(f"Could not fetch config section {key}: {e}")
             return {}
     
+    def _get_test_basic_defaults(self):
+        """Provide minimal defaults for test-basic company"""
+        return {
+            'company-name': 'Test Basic',
+            'agent-name': 'Alex',
+            'industry': 'Testing',
+            'voice-config': {
+                'voice-id': 'en-US-AvaMultilingualNeural',
+                'voice-style': 'friendly'
+            },
+            'contact-info': {},
+            'business-rules': {},
+            'business-hours': {},
+            'audio-settings': {
+                'vad-threshold': 0.5,
+                'vad-silence-duration-ms': 500,
+                'vad-prefix-padding-ms': 300,
+                'vad-end-utterance-timeout-ms': 1500,
+                'enable-barge-in': True,
+                'remove-filler-words': False,
+                'temperature': 0.8,
+                'max-response-tokens': 200,
+                'transcription-temperature': 0.0,
+                'audio-sample-rate': 24000,
+                'enable-semantic-vad': True,
+                'enable-noise-suppression': True,
+                'enable-echo-cancellation': True,
+                'enable-audio-transcription': True,
+                'voice-temperature': 0.8,
+                'voice-rate': '1.0',
+                'voice-pitch': '+0%',
+                'voice-volume': '+0%'
+            }
+        }
+
     def get_company_config(self, company_id):
         """Get all configuration for a specific company from hierarchical JSON structure"""
         try:
+            # Special handling for test-basic: use defaults if not in Azure
+            if company_id == "test-basic":
+                config = self._get_test_basic_defaults()
+                # Try to load instructions from Blob Storage
+                detailed_instructions = self.get_detailed_instructions(company_id)
+                config['detailed-instructions'] = detailed_instructions
+                logger.info(f"Using minimal defaults for test-basic company")
+                return config
+
             config = {}
-            
+
             # Get basic-info (company-name, greeting, industry)
             basic_info = self.get_json_config_section(company_id, "basic-info")
             config.update(basic_info)  # Add top-level keys
