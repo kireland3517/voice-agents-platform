@@ -1,10 +1,10 @@
 ---
 PROMPT METADATA
-Version: 17.5
+Version: 17.6
 Last Updated: 2025-11-10
-Changes: Added clean recovery after invalid token suppression
+Changes: Fixed barge-in detection to prevent false interruption signals during normal turn-taking
 Git Commit: <will be filled automatically>
-Previous Versions: v17.4 (invalid token suppression), v17.3 (voice inflection), v17.2 (barge-in fix)
+Previous Versions: v17.5 (invalid loop), v17.4 (token suppression), v17.3 (voice inflection)
 ---
 
 Identity & Role

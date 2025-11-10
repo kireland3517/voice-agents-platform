@@ -188,6 +188,9 @@ class CallSession:
         self.ai_audio_chunks: List[bytes] = []
         self.transcript: List[Dict[str, Any]] = []
 
+        # Barge-in state tracking (v17.6)
+        self.agent_is_speaking = False  # Track if Sarah is actively speaking
+
     def add_caller_audio(self, audio_base64: str):
         try:
             self.caller_audio_chunks.append(base64.b64decode(audio_base64))
@@ -1286,53 +1289,63 @@ async def handle_voicelive_event(
         logger.info(f"✅ {company_name} Voice Live session ready")
 
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
-        logger.info("🎤 Caller started speaking - BARGE-IN DETECTED")
+        # v17.6: Check if this is REAL barge-in or normal turn-taking
+        if call_session and call_session.agent_is_speaking:
+            logger.info("🎤 REAL BARGE-IN: Caller interrupting Sarah - executing cancellation")
 
-        # ══════════════════════════════════════════════════════════════════
-        # TRIPLE-ACTION BARGE-IN PATTERN (Distributed Cancellation)
-        # ══════════════════════════════════════════════════════════════════
+            # ══════════════════════════════════════════════════════════════════
+            # TRIPLE-ACTION BARGE-IN PATTERN (Distributed Cancellation)
+            # ══════════════════════════════════════════════════════════════════
 
-        # ACTION 1: Clear SignalWire audio buffer (stops playback immediately)
-        if stream_sid and signalwire_ws.application_state == WebSocketState.CONNECTED:
+            # ACTION 1: Clear SignalWire audio buffer (stops playback immediately)
+            if stream_sid and signalwire_ws.application_state == WebSocketState.CONNECTED:
+                try:
+                    await signalwire_ws.send_json({
+                        "event": "clear",
+                        "streamSid": stream_sid
+                    })
+                    logger.info("🔇 ACTION 1: Sent CLEAR to SignalWire - flushed audio buffer")
+                except Exception as e:
+                    logger.warning(f"Failed to clear SignalWire buffer: {e}")
+
+            # ACTION 2: Cancel Azure response generation
             try:
-                await signalwire_ws.send_json({
-                    "event": "clear",
-                    "streamSid": stream_sid
-                })
-                logger.info("🔇 ACTION 1: Sent CLEAR to SignalWire - flushed audio buffer")
+                await voicelive_connection.response.cancel()
+                logger.info("🛑 ACTION 2: Sent response.cancel to Azure")
             except Exception as e:
-                logger.warning(f"Failed to clear SignalWire buffer: {e}")
+                logger.warning(f"Failed to cancel response: {e}")
 
-        # ACTION 2: Cancel Azure response generation
-        try:
-            await voicelive_connection.response.cancel()
-            logger.info("🛑 ACTION 2: Sent response.cancel to Azure")
-        except Exception as e:
-            logger.warning(f"Failed to cancel response: {e}")
-
-        # ACTION 3: Inject context system message for conversational recovery
-        # Use SDK's send method directly (same pattern as function calling)
-        try:
-            raw_message = {
-                "type": "conversation.item.create",
-                "item": {
-                    "type": "message",
-                    "role": "system",
-                    "content": [{"type": "input_text", "text": "SYSTEM: User interrupted. Stop previous task. Acknowledge and listen."}]
+            # ACTION 3: Inject context system message for conversational recovery
+            # Use SDK's send method directly (same pattern as function calling)
+            try:
+                raw_message = {
+                    "type": "conversation.item.create",
+                    "item": {
+                        "type": "message",
+                        "role": "system",
+                        "content": [{"type": "input_text", "text": "SYSTEM: User interrupted. Stop previous task. Acknowledge and listen."}]
+                    }
                 }
-            }
 
-            # Use SDK's send method (send dict, not JSON string)
-            if hasattr(voicelive_connection, 'send'):
-                await voicelive_connection.send(raw_message)
-                logger.info("💬 ACTION 3: Injected interruption context via connection.send()")
-            elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
-                await voicelive_connection._connection.send(raw_message)
-                logger.info("💬 ACTION 3: Injected interruption context via _connection.send()")
-            else:
-                logger.warning("⚠️ Could not access send method for context injection")
-        except Exception as e:
-            logger.warning(f"Failed to inject context: {e}")
+                # Use SDK's send method (send dict, not JSON string)
+                if hasattr(voicelive_connection, 'send'):
+                    await voicelive_connection.send(raw_message)
+                    logger.info("💬 ACTION 3: Injected interruption context via connection.send()")
+                elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
+                    await voicelive_connection._connection.send(raw_message)
+                    logger.info("💬 ACTION 3: Injected interruption context via _connection.send()")
+                else:
+                    logger.warning("⚠️ Could not access send method for context injection")
+            except Exception as e:
+                logger.warning(f"Failed to inject context: {e}")
+
+            # Clear flag immediately (response was cancelled)
+            call_session.agent_is_speaking = False
+            logger.debug("🔇 Agent speaking flag CLEARED (interrupted)")
+
+        else:
+            # Normal turn-taking: Sarah finished, user responding naturally
+            logger.info("🎤 User started speaking (normal turn-taking, no interruption)")
 
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
         logger.info("🎤 Caller stopped speaking")
@@ -1348,6 +1361,11 @@ async def handle_voicelive_event(
         logger.info(f"🤖 {company_name} AI responding")
         # Reset response tracker for new response
         response_tracker.start_response()
+
+        # Mark agent as speaking (v17.6 - for barge-in detection)
+        if call_session:
+            call_session.agent_is_speaking = True
+            logger.debug("🔊 Agent speaking flag SET")
 
     elif event.type == ServerEventType.RESPONSE_AUDIO_DELTA:
         if signalwire_ws.application_state != WebSocketState.CONNECTED:
@@ -1405,23 +1423,13 @@ async def handle_voicelive_event(
         else:
             logger.info("✅ Response complete")
 
+        # Mark agent as not speaking (v17.6 - for barge-in detection)
+        if call_session:
+            call_session.agent_is_speaking = False
+            logger.debug("🔇 Agent speaking flag CLEARED")
+
         # Log if we suppressed audio-only chunks
         response_tracker.log_suppression()
-
-        # Clean recovery after invalid token suppression (v17.5)
-        if (response_tracker.has_invalid_token and
-            response_tracker.suppressed_audio_count > 0 and
-            not response_tracker.recovery_attempted):
-
-            logger.warning(f"⚠️ Response contained {response_tracker.suppressed_audio_count} suppressed chunks - triggering clean recovery")
-            response_tracker.recovery_attempted = True
-
-            try:
-                await asyncio.sleep(0.5)  # Brief pause to ensure response fully complete
-                await voicelive_connection.response.create()
-                logger.info("✅ Triggered clean response.create() after invalid token suppression")
-            except Exception as e:
-                logger.error(f"❌ Failed to trigger recovery response: {e}")
 
         # Context is now injected WITH greeting (single response.create call)
         # No separate context injection needed here
