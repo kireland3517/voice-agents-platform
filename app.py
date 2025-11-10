@@ -1430,14 +1430,20 @@ Stay focused on your current task in the call flow."""
         response_tracker.log_suppression()
 
     elif event.type == ServerEventType.RESPONSE_DONE:
-        logger.info("✅ Response complete")
+        # Check if response was cancelled or completed normally
+        response_status = getattr(event, 'response', None)
+        if response_status and hasattr(response_status, 'status'):
+            if response_status.status == "cancelled":
+                logger.info("✅ Response cancelled successfully (barge-in)")
+            else:
+                logger.info(f"✅ Response complete (status: {response_status.status})")
+        else:
+            logger.info("✅ Response complete")
+
         # Log if we suppressed audio-only chunks
         response_tracker.log_suppression()
         # Context is now injected WITH greeting (single response.create call)
         # No separate context injection needed here
-
-    elif event.type == ServerEventType.RESPONSE_CANCELLED:
-        logger.info("✅ Response cancelled successfully (barge-in)")
 
     elif event.type == ServerEventType.ERROR:
         error_msg = getattr(event, 'error', {}).get('message', 'Unknown error') if hasattr(event, 'error') else 'Unknown error'
