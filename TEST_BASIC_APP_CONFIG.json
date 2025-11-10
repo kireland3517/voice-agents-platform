@@ -1,0 +1,36 @@
+{
+  "test-basic/basic-info": {
+    "company-name": "Test Basic",
+    "agent-name": "Alex",
+    "industry": "Testing",
+    "greeting": "Hi, I'm Alex. What's your name?"
+  },
+  "test-basic/voice-config": {
+    "voice-id": "en-US-AvaMultilingualNeural",
+    "voice-style": "friendly"
+  },
+  "test-basic/contact-info": {},
+  "test-basic/business-rules": {},
+  "test-basic/business-hours": {},
+  "test-basic/audio-settings": {
+    "voice-rate": "1.0",
+    "voice-pitch": "+0%",
+    "voice-volume": "+0%",
+    "voice-temperature": 0.8,
+    "vad-threshold": 0.5,
+    "vad-prefix-padding-ms": 300,
+    "vad-silence-duration-ms": 500,
+    "vad-end-utterance-timeout-ms": 1500,
+    "enable-barge-in": true,
+    "remove-filler-words": false,
+    "temperature": 0.8,
+    "max-response-tokens": 200,
+    "transcription-temperature": 0.0,
+    "transcription-prompt": "Alex, Test Basic, testing, voice agent",
+    "audio-sample-rate": 24000,
+    "enable-semantic-vad": true,
+    "enable-noise-suppression": true,
+    "enable-echo-cancellation": true,
+    "enable-audio-transcription": true
+  }
+}
