@@ -1357,15 +1357,24 @@ Stay focused on your current task in the call flow."""
             logger.warning(f"Failed to cancel response: {e}")
 
         # ACTION 3: Inject context system message for conversational recovery
+        # Use raw WebSocket bypass (SDK doesn't support 'role' parameter)
         try:
-            await voicelive_connection.conversation.item.create(
-                item={
+            raw_message = {
+                "type": "conversation.item.create",
+                "item": {
                     "type": "message",
                     "role": "system",
                     "content": [{"type": "input_text", "text": "SYSTEM: User interrupted. Stop previous task. Acknowledge and listen."}]
                 }
-            )
-            logger.info("💬 ACTION 3: Injected interruption context system message")
+            }
+
+            # Access the underlying WebSocket connection
+            ws = getattr(voicelive_connection, '_ws', None) or getattr(voicelive_connection, 'ws', None)
+            if ws:
+                await ws.send(json.dumps(raw_message))
+                logger.info("💬 ACTION 3: Injected interruption context system message via raw WebSocket")
+            else:
+                logger.warning("⚠️ Could not access WebSocket for context injection")
         except Exception as e:
             logger.warning(f"Failed to inject context: {e}")
 
