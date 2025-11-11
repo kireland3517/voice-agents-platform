@@ -27,7 +27,7 @@ on:
       - '.github/workflows/deploy-to-azure.yml'
       - 'config.py'
       - 'app.py'
-      - 'sarah_instructions_senior_life.md'  # Sarah prompt (auto-synced to Blob Storage)
+      - 'dustin_instructions_senior_life.md'  # Dustin prompt (auto-synced to Blob Storage)
 
   # Manual trigger with environment selection
   workflow_dispatch:
@@ -524,12 +524,12 @@ jobs:
 
       - name: Upload instructions to Blob Storage (Staging)
         run: |
-          echo "Uploading sarah_instructions_senior_life.md to staging Blob Storage..."
+          echo "Uploading dustin_instructions_senior_life.md to staging Blob Storage..."
           az storage blob upload \
             --account-name voiceagentsinstructions \
             --container-name agent-instructions \
-            --name sarah_instructions_senior_life.md \
-            --file sarah_instructions_senior_life.md \
+            --name dustin_instructions_senior_life.md \
+            --file dustin_instructions_senior_life.md \
             --auth-mode login \
             --overwrite \
             || echo "⚠️ Blob upload failed - may need manual upload via portal"
@@ -640,12 +640,12 @@ jobs:
       - name: Upload instructions to Blob Storage (Production)
         if: steps.verify.outputs.deployment-status == 'success'
         run: |
-          echo "Uploading sarah_instructions_senior_life.md to production Blob Storage..."
+          echo "Uploading dustin_instructions_senior_life.md to production Blob Storage..."
           az storage blob upload \
             --account-name voiceagentsinstructions \
             --container-name agent-instructions \
-            --name sarah_instructions_senior_life.md \
-            --file sarah_instructions_senior_life.md \
+            --name dustin_instructions_senior_life.md \
+            --file dustin_instructions_senior_life.md \
             --auth-mode login \
             --overwrite \
             || echo "⚠️ Blob upload failed - may need manual upload via portal"
