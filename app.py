@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from config import ConfigManager
 from zipcode_service import ZipcodeService
 from surname_verifier import find_surname_candidates, generate_llm_prompt
+from cost_tracker import get_cost_tracker
 
 from functools import lru_cache
 from time import time
@@ -64,6 +65,7 @@ SAVE_TRANSCRIPTS = os.getenv("SAVE_TRANSCRIPTS", "true").lower() == "true"
 
 config_manager = ConfigManager()
 zipcode_service = ZipcodeService()
+cost_tracker = get_cost_tracker(config_manager)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION CACHE (5-minute TTL)
@@ -945,6 +947,80 @@ def get_company_audio_settings(company_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ──────────────────────────────────────────────────────────────────────────────
+# COST MONITORING API ENDPOINTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.get("/costs/daily")
+def get_daily_costs(date: Optional[str] = None):
+    """Get daily cost summary
+
+    Args:
+        date: Date in YYYY-MM-DD format (optional, defaults to today)
+
+    Returns:
+        Daily cost summary with breakdown
+    """
+    try:
+        summary = cost_tracker.get_daily_summary(date)
+        return summary
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/costs/call/{call_sid}")
+def get_call_costs(call_sid: str):
+    """Get cost breakdown for a specific call
+
+    Args:
+        call_sid: Call identifier
+
+    Returns:
+        Detailed cost breakdown for the call
+    """
+    try:
+        if call_sid not in cost_tracker.call_costs:
+            raise HTTPException(status_code=404, detail=f"Call {call_sid} not found in cost tracker")
+
+        from dataclasses import asdict
+        cost_data = asdict(cost_tracker.call_costs[call_sid])
+        return cost_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/costs/pricing")
+def get_pricing_info():
+    """Get current pricing configuration
+
+    Returns:
+        Current pricing rates per component
+    """
+    return {
+        "currency": "USD",
+        "pricing_version": "2024-11",
+        "components": {
+            "openai_realtime_api": {
+                "input_audio_per_million_tokens": cost_tracker.PRICE_INPUT_AUDIO_PER_MILLION,
+                "output_audio_per_million_tokens": cost_tracker.PRICE_OUTPUT_AUDIO_PER_MILLION,
+                "input_text_per_million_tokens": cost_tracker.PRICE_INPUT_TEXT_PER_MILLION,
+                "output_text_per_million_tokens": cost_tracker.PRICE_OUTPUT_TEXT_PER_MILLION
+            },
+            "signalwire": {
+                "inbound_per_minute": cost_tracker.PRICE_SIGNALWIRE_PER_MINUTE
+            },
+            "azure_infrastructure": {
+                "container_apps_per_minute": cost_tracker.PRICE_CONTAINER_APPS_PER_MINUTE,
+                "storage_per_call": cost_tracker.PRICE_STORAGE_PER_CALL
+            }
+        },
+        "estimated_cost_per_minute": {
+            "min": 0.015,
+            "max": 0.017,
+            "description": "Estimated total cost per minute of conversation"
+        }
+    }
+
+# ──────────────────────────────────────────────────────────────────────────────
 # MAIN WEBSOCKET BRIDGE
 # ──────────────────────────────────────────────────────────────────────────────
 @app.websocket("/voice/{company_id}")
@@ -1777,6 +1853,9 @@ async def send_signalwire_audio_to_voicelive(
                         shared_state["call_session"] = call_session
                         shared_state["stream_sid"] = stream_sid
 
+                        # Start cost tracking
+                        cost_tracker.start_call_tracking(stream_sid or "unknown", company_id)
+
                         logger.info(f"▶️ Call started for {company_name}")
                         logger.info(f"📞 Caller ID: {caller_phone}")
                         logger.info(f"📊 Audio format: {media_format}")
@@ -1914,6 +1993,13 @@ Follow all tool usage rules and call flow procedures exactly as specified."""
                                 call_session.finalize()
                                 await call_session.save_to_storage()
                                 logger.info("✅ Call session saved successfully")
+
+                                # Finalize and save cost tracking
+                                if stream_sid:
+                                    cost_breakdown = cost_tracker.finalize_call_costs(stream_sid)
+                                    if cost_breakdown:
+                                        await cost_tracker.save_call_costs(stream_sid)
+
                             except Exception as e:
                                 logger.error(f"Failed to save call session: {e}")
                                 logger.error(traceback.format_exc())
