@@ -6,8 +6,7 @@
     "greeting": "Hi, I'm Alex. What's your name?"
   },
   "test-basic/voice-config": {
-    "voice-id": "en-US-AvaMultilingualNeural",
-    "voice-style": "friendly"
+    "voice-style": "en-US-AvaMultilingualNeural"
   },
   "test-basic/contact-info": {},
   "test-basic/business-rules": {},

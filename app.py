@@ -1003,7 +1003,6 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         "monitor": SessionMonitor(company_id),  # Add session monitor
         "query_caller_id": query_caller_id,  # Caller ID from URL query parameters
         "greeting_done": False,  # Track when greeting completes (prevents race condition)
-        "enhanced_context": None,  # Store context for injection after greeting
         "company_id": company_id  # Add company_id for conditional logic
     }
     voicelive_connection = None
@@ -1852,8 +1851,8 @@ async def send_signalwire_audio_to_voicelive(
                             f"Caller ID: {formatted_phone}"
                         )
 
-                        # Voice Live SDK passes context via additional_instructions parameter
-                        # Format matches v7 prompt expectations
+                        # Prepare call context to inject into session instructions
+                        # Using session.update() is cleaner than additional_instructions per Azure best practices
                         enhanced_context = f"""=== CALL CONTEXT (For This Call Only) ===
 
 TRANSFER CONTEXT (Internal Use Only):
@@ -1868,25 +1867,26 @@ Phone Number: {formatted_phone}
 Use the provided context as instructed in your main prompt.
 Follow all tool usage rules and call flow procedures exactly as specified."""
 
-                        logger.info(f"📤 Call context prepared (matches v12 prompt format)")
+                        logger.info(f"📤 Call context prepared")
                         logger.info(f"📤 DEBUG FULL CONTEXT:\n{enhanced_context}")
 
-                        # Store context for injection after greeting completes
-                        shared_state["enhanced_context"] = enhanced_context
+                        # Update session instructions with caller context using session.update()
+                        # This is cleaner and more explicit than using additional_instructions
+                        updated_instructions = f"""{company_config.get('detailed-instructions', '')}
+
+{enhanced_context}"""
+
+                        session_config = RequestSession(instructions=updated_instructions)
+                        await voicelive_connection.session.update(session=session_config)
+                        logger.info("✅ Updated session with caller context via session.update()")
 
                         # Wait for audio stream to fully establish before greeting
                         await asyncio.sleep(1.5)
 
-                        # Trigger greeting WITH context injection (prevents race condition)
-                        # Including context in same response.create() avoids:
-                        # - Race condition (only one call)
-                        # - Unwanted response (no separate context injection)
-                        # - Invalid token loops (no system message after greeting)
-                        await voicelive_connection.response.create(
-                            additional_instructions=enhanced_context
-                        )
+                        # Trigger greeting WITHOUT additional_instructions (context already in session)
+                        await voicelive_connection.response.create()
                         shared_state["greeting_done"] = True  # Mark as done immediately
-                        logger.info("✅ Triggered greeting with context (single response.create call)")
+                        logger.info("✅ Triggered greeting (context injected via session.update)")
 
                     elif event_name == "media":
                         if not call_session:

@@ -51,9 +51,9 @@ class ConfigManager:
             return None
 
         try:
-            # UPDATED: Use sarah_instructions_senior_life.md for Sarah voice agent
+            # UPDATED: Use dustin_instructions_senior_life.md for Dustin voice agent
             if company_id == "senior-life":
-                blob_name = "sarah_instructions_senior_life.md"
+                blob_name = "dustin_instructions_senior_life.md"
             elif company_id == "test-basic":
                 blob_name = "test_basic_instructions.md"
             else:

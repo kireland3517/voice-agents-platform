@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Connect>
+    <Stream url="wss://voice-agents-bridge.victoriouswave-f95f67ff.eastus2.azurecontainerapps.io/voice/test-basic" codec="L16@24000h">
+      <Parameter name="caller_id" value="{{From}}" />
+      <Parameter name="call_sid" value="{{CallSid}}" />
+    </Stream>
+  </Connect>
+</Response>
