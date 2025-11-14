@@ -480,12 +480,12 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
     logger.info(f"Model: {AZURE_AI_MODEL}")
 
     try:
-        # Connect using Voice Live SDK
+        # Connect using Voice Live SDK - returns context manager for async with
         connection = await connect(
             endpoint=AZURE_AI_ENDPOINT,
             credential=AzureKeyCredential(AZURE_AI_KEY),
             model=AZURE_AI_MODEL,
-        ).__aenter__()  # Enter async context manager
+        )  # Returns async context manager for use with 'async with'
 
         logger.info("✅ Voice Live connection established")
 
@@ -1090,53 +1090,95 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         # Get heartbeat interval from config
         heartbeat_interval = audio_settings.get('heartbeat-interval-seconds', 30)
 
-        # Create connection with retry logic
-        voicelive_connection = await create_voicelive_connection_with_retry(
+        # Use async context manager to ensure proper connection cleanup
+        async with (await create_voicelive_connection_with_retry(
             instructions, voice_name, audio_settings
-        )
+        )) as voicelive_connection:
 
-        # Start heartbeat task
-        heartbeat_task = asyncio.create_task(
-            heartbeat_loop(voicelive_connection, shared_state["monitor"], heartbeat_interval)
-        )
+            # Log connection lifecycle for monitoring
+            call_start = datetime.now(UTC)
+            logger.info(
+                "🔌 Voice Live connection opened",
+                extra={
+                    "call_sid": call_sid,
+                    "company_id": company_id,
+                    "timestamp": call_start.isoformat()
+                }
+            )
 
-        logger.info(f"✅ Voice Live API connected with monitoring for {company_name}")
+            # Start heartbeat task
+            heartbeat_task = asyncio.create_task(
+                heartbeat_loop(voicelive_connection, shared_state["monitor"], heartbeat_interval)
+            )
 
-        # Start bidirectional audio forwarding
-        audio_sender_task = asyncio.create_task(
-            send_signalwire_audio_to_voicelive(signalwire_ws, voicelive_connection, company_id, company_name, shared_state, greeting_text)
-        )
-        logger.info(f"🎙️ {company_name} agent ready for calls!")
+            logger.info(f"✅ Voice Live API connected with monitoring for {company_name}")
 
-        try:
-            # Process events from Voice Live API
-            async for event in voicelive_connection:
+            # Start bidirectional audio forwarding
+            audio_sender_task = asyncio.create_task(
+                send_signalwire_audio_to_voicelive(signalwire_ws, voicelive_connection, company_id, company_name, shared_state, greeting_text)
+            )
+            logger.info(f"🎙️ {company_name} agent ready for calls!")
+
+            try:
+                # Process events from Voice Live API
+                async for event in voicelive_connection:
+                    try:
+                        call_session = shared_state.get("call_session")
+                        stream_sid = shared_state.get("stream_sid")
+                        monitor = shared_state.get("monitor")
+
+                        # Pass monitor and shared_state to event handler
+                        await handle_voicelive_event(
+                            event, signalwire_ws, voicelive_connection,
+                            company_name, stream_sid, call_session,
+                            monitor,  # Add monitor parameter
+                            shared_state  # Add shared_state for context injection
+                        )
+                    except Exception as e:
+                        logger.error(f"Error handling Voice Live event: {e}")
+                        monitor = shared_state.get("monitor")
+                        if monitor:
+                            monitor.add_error(str(e))
+                        logger.error(traceback.format_exc())
+            except Exception as e:
+                logger.info(f"Voice Live connection closed for {company_name}: {e}")
+            finally:
+                # Cancel audio sender task
+                audio_sender_task.cancel()
                 try:
-                    call_session = shared_state.get("call_session")
-                    stream_sid = shared_state.get("stream_sid")
-                    monitor = shared_state.get("monitor")
+                    await audio_sender_task
+                except asyncio.CancelledError:
+                    pass
 
-                    # Pass monitor and shared_state to event handler
-                    await handle_voicelive_event(
-                        event, signalwire_ws, voicelive_connection,
-                        company_name, stream_sid, call_session,
-                        monitor,  # Add monitor parameter
-                        shared_state  # Add shared_state for context injection
-                    )
-                except Exception as e:
-                    logger.error(f"Error handling Voice Live event: {e}")
+                # Clean up heartbeat task with timeout
+                if heartbeat_task:
+                    heartbeat_task.cancel()
+                    try:
+                        await asyncio.wait_for(heartbeat_task, timeout=2.0)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        pass
+
+                # Log session summary (protected - won't swallow exceptions)
+                try:
                     monitor = shared_state.get("monitor")
                     if monitor:
-                        monitor.add_error(str(e))
-                    logger.error(traceback.format_exc())
-        except Exception as e:
-            logger.info(f"Voice Live connection closed for {company_name}: {e}")
-        finally:
-            audio_sender_task.cancel()
-            try:
-                await audio_sender_task
-            except asyncio.CancelledError:
-                pass
+                        monitor.log_summary()
+                except Exception as e:
+                    logger.warning(f"Failed to log session summary: {e}")
+
+                # Log connection close for monitoring
+                call_duration = (datetime.now(UTC) - call_start).total_seconds()
+                logger.info(
+                    "🔌 Voice Live connection closed",
+                    extra={
+                        "call_sid": call_sid,
+                        "company_id": company_id,
+                        "duration_seconds": call_duration,
+                        "timestamp": datetime.now(UTC).isoformat()
+                    }
+                )
+
+            # Connection automatically closed when exiting async with block
 
     except Exception as e:
         msg = f"Voice Live connection failed: {e}"
@@ -1145,23 +1187,6 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         if signalwire_ws.application_state == WebSocketState.CONNECTED:
             await signalwire_ws.send_text(json.dumps({"type": "error", "source": "voicelive", "detail": str(e)}))
             await signalwire_ws.close(code=1011)
-    finally:
-        # Clean up heartbeat task
-        if heartbeat_task:
-            heartbeat_task.cancel()
-            try:
-                await heartbeat_task
-            except asyncio.CancelledError:
-                pass
-
-        # Log session summary
-        monitor = shared_state.get("monitor")
-        if monitor:
-            monitor.log_summary()
-
-        # Voice Live SDK connection cleanup is handled automatically
-        # No explicit close needed for connections created with __aenter__()
-        pass
 
 # ──────────────────────────────────────────────────────────────────────────────
 # VOICE LIVE → SIGNALWIRE EVENT HANDLER
