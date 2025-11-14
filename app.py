@@ -480,12 +480,12 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
     logger.info(f"Model: {AZURE_AI_MODEL}")
 
     try:
-        # Connect using Voice Live SDK - returns context manager for async with
-        connection = await connect(
+        # Connect using Voice Live SDK - returns context manager
+        connection = connect(
             endpoint=AZURE_AI_ENDPOINT,
             credential=AzureKeyCredential(AZURE_AI_KEY),
             model=AZURE_AI_MODEL,
-        )  # Returns async context manager for use with 'async with'
+        )  # Returns context manager (not awaitable)
 
         logger.info("✅ Voice Live connection established")
 
@@ -1091,9 +1091,9 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         heartbeat_interval = audio_settings.get('heartbeat-interval-seconds', 30)
 
         # Use async context manager to ensure proper connection cleanup
-        async with (await create_voicelive_connection_with_retry(
+        async with create_voicelive_connection_with_retry(
             instructions, voice_name, audio_settings
-        )) as voicelive_connection:
+        ) as voicelive_connection:
 
             # Log connection lifecycle for monitoring
             call_start = datetime.now(UTC)
