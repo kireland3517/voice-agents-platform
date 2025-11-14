@@ -649,11 +649,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             tool_choice="auto"
         )
 
-        # Update session using proper SDK method
-        await connection.session.update(session=session_config)
-        logger.info("✅ Voice Live session configured successfully with function calling")
-
-        # Log final configuration
+        # Log configuration (session will be updated after entering context)
         logger.info("=" * 80)
         logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
         logger.info(f"   Voice: {azure_voice_name}")
@@ -665,7 +661,9 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         logger.info(f"   Features: Noise={use_noise_suppression}, Echo={use_echo_cancellation}, Transcription={use_transcription}")
         logger.info("=" * 80)
 
-        return connection
+        # Return both the context manager and session config
+        # Caller must enter context before calling session.update()
+        return (connection, session_config)
 
     except Exception as e:
         logger.error(f"❌ Failed to create Voice Live connection: {e}")
@@ -1090,13 +1088,17 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         # Get heartbeat interval from config
         heartbeat_interval = audio_settings.get('heartbeat-interval-seconds', 30)
 
-        # Get connection manager from retry helper (await to get context manager)
-        connection_manager = await create_voicelive_connection_with_retry(
+        # Get connection manager and session config from retry helper
+        connection_manager, session_config = await create_voicelive_connection_with_retry(
             instructions, voice_name, audio_settings
         )
 
         # Use async context manager to ensure proper connection cleanup
         async with connection_manager as voicelive_connection:
+
+            # Configure session AFTER entering context (when .session is available)
+            await voicelive_connection.session.update(session=session_config)
+            logger.info("✅ Voice Live session configured successfully with function calling")
 
             # Log connection lifecycle for monitoring
             call_start = datetime.now(UTC)
