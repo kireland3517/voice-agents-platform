@@ -1090,10 +1090,13 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         # Get heartbeat interval from config
         heartbeat_interval = audio_settings.get('heartbeat-interval-seconds', 30)
 
-        # Use async context manager to ensure proper connection cleanup
-        async with create_voicelive_connection_with_retry(
+        # Get connection manager from retry helper (await to get context manager)
+        connection_manager = await create_voicelive_connection_with_retry(
             instructions, voice_name, audio_settings
-        ) as voicelive_connection:
+        )
+
+        # Use async context manager to ensure proper connection cleanup
+        async with connection_manager as voicelive_connection:
 
             # Log connection lifecycle for monitoring
             call_start = datetime.now(UTC)
