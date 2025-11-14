@@ -1105,7 +1105,7 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
             logger.info(
                 "🔌 Voice Live connection opened",
                 extra={
-                    "call_sid": call_sid,
+                    "call_sid": call_sid_param or "pending",  # Use query param or "pending" (stream not started yet)
                     "company_id": company_id,
                     "timestamp": call_start.isoformat()
                 }
@@ -1173,10 +1173,15 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
 
                 # Log connection close for monitoring
                 call_duration = (datetime.now(UTC) - call_start).total_seconds()
+
+                # Get call_sid from session if available, otherwise from query param
+                call_session = shared_state.get("call_session")
+                session_call_sid = call_session.call_sid if call_session else None
+
                 logger.info(
                     "🔌 Voice Live connection closed",
                     extra={
-                        "call_sid": call_sid,
+                        "call_sid": session_call_sid or call_sid_param or "unknown",
                         "company_id": company_id,
                         "duration_seconds": call_duration,
                         "timestamp": datetime.now(UTC).isoformat()
