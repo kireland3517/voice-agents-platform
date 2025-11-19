@@ -1215,6 +1215,7 @@ class ResponseTracker:
         self.transcript_buffer = ""  # Buffer to accumulate transcript deltas
         self.recovery_attempted = False  # Prevent double recovery after invalid token suppression
         self.suppress_next_audio_chunk = False  # Suppress only the chunk tied to invalid token
+        self.chunks_to_suppress = 0  # Counter for multiple chunk suppression (audio arrives before transcript)
 
     def start_response(self):
         """Reset for new response"""
@@ -1224,17 +1225,19 @@ class ResponseTracker:
         self.transcript_buffer = ""  # Reset buffer
         self.recovery_attempted = False  # Reset recovery flag
         self.suppress_next_audio_chunk = False  # Reset per-chunk suppression flag
+        self.chunks_to_suppress = 0  # Reset chunk counter
 
     def add_transcript_delta(self, delta_text: str):
         """Add transcript delta and check for invalid tokens"""
         self.transcript_buffer += delta_text
 
-        # Check if the accumulated buffer contains invalid token using regex to catch all variants
-        # Pattern: <|anything|> format (e.g., <|audio_text|>, <|text_hbr_audio|>, <|end_of_text|>)
-        if re.search(r'<\|[^|]+\|>', self.transcript_buffer):
+        # Check if the accumulated buffer contains specific invalid tokens
+        # Using explicit list instead of broad regex to avoid false positives
+        if any(token in self.transcript_buffer for token in INVALID_TOKEN_LITERALS):
             logger.error(f"🚨 INVALID TOKEN DETECTED IN TRANSCRIPT BUFFER: '{self.transcript_buffer}'")
             self.has_invalid_token = True
             self.suppress_next_audio_chunk = True
+            self.chunks_to_suppress = 5  # Suppress multiple chunks since audio arrives before transcript
             return True  # Signal that invalid token was found
         return False
 
@@ -1243,9 +1246,10 @@ class ResponseTracker:
         self.current_response_has_text = True
 
     def mark_invalid_token(self):
-        """Mark that response contains invalid token (suppresses next audio chunk)"""
+        """Mark that response contains invalid token (suppresses next audio chunks)"""
         self.has_invalid_token = True
         self.suppress_next_audio_chunk = True
+        self.chunks_to_suppress = 5  # Suppress multiple chunks to catch bad audio
 
     def should_forward_audio(self) -> bool:
         """Return True if audio should be forwarded (has text and no invalid tokens)"""
@@ -1253,6 +1257,10 @@ class ResponseTracker:
 
     def should_suppress_next_chunk(self) -> bool:
         """Return True if the next audio chunk should be suppressed"""
+        # Check counter first (handles multiple chunks)
+        if self.chunks_to_suppress > 0:
+            self.chunks_to_suppress -= 1
+            return True
         return self.suppress_next_audio_chunk
 
     def clear_chunk_suppression(self):
