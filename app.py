@@ -1203,6 +1203,9 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Response tracking to detect and suppress audio-only responses (prevents <|audio_text|> token)
+INVALID_TOKEN_LITERALS = {"<|audio_text|>", "<|text_hbr_audio|>", "<|end_of_text|>"}
+
+
 class ResponseTracker:
     """Track whether current response has text to prevent audio-only responses"""
     def __init__(self):
@@ -1211,6 +1214,7 @@ class ResponseTracker:
         self.has_invalid_token = False  # Track if response contains invalid token
         self.transcript_buffer = ""  # Buffer to accumulate transcript deltas
         self.recovery_attempted = False  # Prevent double recovery after invalid token suppression
+        self.suppress_next_audio_chunk = False  # Suppress only the chunk tied to invalid token
 
     def start_response(self):
         """Reset for new response"""
@@ -1219,6 +1223,7 @@ class ResponseTracker:
         self.has_invalid_token = False
         self.transcript_buffer = ""  # Reset buffer
         self.recovery_attempted = False  # Reset recovery flag
+        self.suppress_next_audio_chunk = False  # Reset per-chunk suppression flag
 
     def add_transcript_delta(self, delta_text: str):
         """Add transcript delta and check for invalid tokens"""
@@ -1229,6 +1234,7 @@ class ResponseTracker:
         if re.search(r'<\|[^|]+\|>', self.transcript_buffer):
             logger.error(f"🚨 INVALID TOKEN DETECTED IN TRANSCRIPT BUFFER: '{self.transcript_buffer}'")
             self.has_invalid_token = True
+            self.suppress_next_audio_chunk = True
             return True  # Signal that invalid token was found
         return False
 
@@ -1237,12 +1243,21 @@ class ResponseTracker:
         self.current_response_has_text = True
 
     def mark_invalid_token(self):
-        """Mark that response contains invalid token (should suppress all audio)"""
+        """Mark that response contains invalid token (suppresses next audio chunk)"""
         self.has_invalid_token = True
+        self.suppress_next_audio_chunk = True
 
     def should_forward_audio(self) -> bool:
         """Return True if audio should be forwarded (has text and no invalid tokens)"""
         return self.current_response_has_text and not self.has_invalid_token
+
+    def should_suppress_next_chunk(self) -> bool:
+        """Return True if the next audio chunk should be suppressed"""
+        return self.suppress_next_audio_chunk
+
+    def clear_chunk_suppression(self):
+        """Clear per-chunk suppression flag after suppressing"""
+        self.suppress_next_audio_chunk = False
 
     def suppress_audio(self):
         """Count a suppressed audio chunk"""
@@ -1287,18 +1302,30 @@ async def handle_voicelive_event(
     # Log user speech transcripts
     event_type_str = str(event.type)
 
-    # Special handling for response.audio_transcript.delta - check for invalid tokens character by character
+    # Special handling for response.audio_transcript.delta - strip invalid tokens
     # ONLY for non-minimal mode (test-basic skips this complexity)
     if not is_minimal:
         if event_type_str == 'ServerEventType.RESPONSE_AUDIO_TRANSCRIPT_DELTA' or 'audio_transcript.delta' in event_type_str.lower():
             if hasattr(event, 'delta') and event.delta:
+                delta_text = str(event.delta)
+
+                # Strip denylisted literals from the delta before buffering
+                stripped_delta = delta_text
+                for literal in INVALID_TOKEN_LITERALS:
+                    if literal in stripped_delta:
+                        stripped_delta = stripped_delta.replace(literal, "")
+                        logger.debug(f"🧹 Stripped denylisted literal '{literal}' from transcript delta")
+
+                # If nothing remains after stripping, skip buffering
+                if not stripped_delta.strip():
+                    if delta_text.strip():  # Only log if there was content before stripping
+                        logger.debug(f"⏭️ Skipping transcript delta after stripping denylisted literals: '{delta_text}'")
+                    return
+
                 # Add to buffer and check for invalid tokens
-                if response_tracker.add_transcript_delta(str(event.delta)):
+                if response_tracker.add_transcript_delta(stripped_delta):
                     # Invalid token detected! Suppress audio and log
                     logger.error("🚨 INVALID TOKEN IN DELTA - Audio will be suppressed")
-                    # Don't trigger recovery - it creates more invalid tokens
-                    # Suppression will prevent audio from playing
-                    # Natural conversation will resume when user speaks
                     return
                 # Don't log individual delta characters/words - too noisy
                 return  # Skip further processing for delta events
@@ -1314,29 +1341,38 @@ async def handle_voicelive_event(
 
         if transcript_text:
             # Filter out invalid tokens from transcript (ONLY in non-minimal mode)
-            # Pattern matches: <|audio_text|>, <|text_hbr_audio|>, <|end_of_text|>, etc.
             if not is_minimal:
                 INVALID_TOKENS = {"null", ""}
+                transcript_str = str(transcript_text)
+                matched_tokens = [token for token in INVALID_TOKEN_LITERALS if token in transcript_str]
+                cleaned_transcript = transcript_str
 
-                # Check for invalid token using regex
-                if re.search(r'<\|[^|]+\|>', str(transcript_text)):
-                    logger.error(f"🚨 DETECTED INVALID TOKEN IN TRANSCRIPT: '{transcript_text}'")
-                    response_tracker.mark_invalid_token()
-                    # Don't trigger recovery - it creates more invalid tokens
-                    # Suppression will prevent audio from playing
-                    return  # Don't process this event further
+                # Strip matched tokens from transcript
+                for token in matched_tokens:
+                    cleaned_transcript = cleaned_transcript.replace(token, " ")
 
-                if transcript_text.strip() not in INVALID_TOKENS:
+                cleaned_transcript = cleaned_transcript.strip()
+
+                if matched_tokens:
+                    if cleaned_transcript:
+                        logger.info(f"ℹ️ Stripped invalid token(s) {matched_tokens} from transcript")
+                    else:
+                        logger.warning(f"🚫 Dropped transcript containing only invalid token(s) {matched_tokens}")
+                        response_tracker.mark_invalid_token()
+                        return
+
+                if cleaned_transcript and cleaned_transcript not in INVALID_TOKENS:
                     # Note: This could be user OR assistant transcript depending on event type
-                    logger.info(f"📝 TRANSCRIPT: {transcript_text}")
+                    logger.info(f"📝 TRANSCRIPT: {cleaned_transcript}")
+                    response_tracker.mark_text_received()
 
                     # Save transcript to session
                     if call_session:
                         # Determine speaker based on event type
                         speaker = "assistant" if "response" in event_type_str.lower() else "user"
-                        call_session.add_transcript_entry(speaker, transcript_text)
+                        call_session.add_transcript_entry(speaker, cleaned_transcript)
                 else:
-                    logger.warning(f"🚫 FILTERED INVALID TOKEN: '{transcript_text}'")
+                    logger.warning(f"🚫 FILTERED INVALID TRANSCRIPT CONTENT: '{transcript_text}'")
             else:
                 # Minimal mode: just log and save transcript, no filtering
                 logger.info(f"📝 TRANSCRIPT: {transcript_text}")
@@ -1354,20 +1390,35 @@ async def handle_voicelive_event(
                 response_text = event.text
 
             if response_text and isinstance(response_text, str):
-                # Filter out invalid LLM tokens that should not be spoken using regex
-                # Pattern matches: <|audio_text|>, <|text_hbr_audio|>, <|end_of_text|>, etc.
                 INVALID_TOKENS = {"null", ""}
-                if response_text.strip() in INVALID_TOKENS or re.search(r'<\|[^|]+\|>', response_text):
-                    logger.warning(f"🚫 DETECTED INVALID TOKEN IN TEXT DELTA: '{response_text}'")
-                    response_tracker.mark_invalid_token()
-                    # Don't trigger recovery - it creates more invalid tokens
-                    # Suppression will prevent audio from playing
-                    # Don't log or process this text further
-                    # DON'T mark as having text - this is an invalid token
-                else:
-                    logger.info(f"💬 AI RESPONSE TEXT: {response_text}")
+                delta_str = response_text
+                matched_tokens = [token for token in INVALID_TOKEN_LITERALS if token in delta_str]
+                cleaned_response = delta_str
+
+                # Strip matched tokens from response text
+                for token in matched_tokens:
+                    cleaned_response = cleaned_response.replace(token, " ")
+
+                cleaned_response = cleaned_response.strip()
+                delta_is_token_only = False
+
+                if matched_tokens:
+                    if cleaned_response:
+                        logger.info(f"ℹ️ Stripped invalid token(s) {matched_tokens} from text delta")
+                    else:
+                        delta_is_token_only = True
+                        logger.warning(f"🚫 Dropped invalid token-only text delta: {matched_tokens}")
+
+                if cleaned_response and cleaned_response not in INVALID_TOKENS:
+                    logger.info(f"💬 AI RESPONSE TEXT: {cleaned_response}")
                     # Mark that valid text was received for this response
                     response_tracker.mark_text_received()
+                elif cleaned_response in INVALID_TOKENS:
+                    logger.warning(f"🚫 Dropped empty/invalid text delta: '{response_text}'")
+                    response_tracker.mark_invalid_token()
+
+                if delta_is_token_only:
+                    response_tracker.mark_invalid_token()
 
     # Log content parts (might contain text)
     if 'content_part' in event_type_str.lower() or 'output_item' in event_type_str.lower():
@@ -1517,18 +1568,23 @@ async def handle_voicelive_event(
             return
 
         # CRITICAL: Audio suppression for invalid tokens (ONLY in non-minimal mode)
+        suppress_chunk = False
         if not is_minimal:
-            # Check if we should suppress this audio (invalid token detected)
-            # This prevents "<|audio_text|>" from being spoken out loud
-            if response_tracker.has_invalid_token:
-                response_tracker.suppress_audio()
-                logger.warning("🚫 SUPPRESSING AUDIO CHUNK - Invalid token detected (preventing 'audio underscore text' speech)")
-                return
+            # Suppress only the chunk tied to the invalid token, then resume
+            if response_tracker.should_suppress_next_chunk():
+                suppress_chunk = True
 
             # Additional safety check: If this is string data instead of bytes, it's likely a token
             if isinstance(audio_bytes, str):
                 logger.warning(f"🚫 SUPPRESSING STRING AUDIO DATA: '{audio_bytes}' (expected bytes)")
                 response_tracker.mark_invalid_token()
+                suppress_chunk = True
+
+            if suppress_chunk:
+                response_tracker.suppress_audio()
+                response_tracker.clear_chunk_suppression()
+                if not isinstance(audio_bytes, str):
+                    logger.warning("🚫 SUPPRESSING AUDIO CHUNK - Invalid token detected (preventing 'audio underscore text' speech)")
                 return
 
         # Convert bytes to base64 for SignalWire
