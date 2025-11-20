@@ -42,18 +42,18 @@ from azure.ai.voicelive.models import (
     FunctionTool
 )
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # LOGGING
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
 )
 logger = logging.getLogger("voice_bridge")
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # ENV & CONFIG
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 load_dotenv()
 
 AZURE_AI_ENDPOINT = os.getenv("AZURE_AI_ENDPOINT", "").strip()
@@ -67,9 +67,9 @@ config_manager = ConfigManager()
 zipcode_service = ZipcodeService()
 cost_tracker = get_cost_tracker(config_manager)
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # CONFIGURATION CACHE (5-minute TTL)
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 @lru_cache(maxsize=128)
 def _get_company_config_cached(company_id: str, cache_key: int):
     """Internal cached config getter with time-based key"""
@@ -80,9 +80,9 @@ def get_cached_config(company_id: str):
     cache_key = int(time() // 300)  # Cache expires every 5 minutes
     return _get_company_config_cached(company_id, cache_key)
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # FUNCTION FEEDBACK MESSAGES (Pre-function verbal feedback)
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 FUNCTION_FEEDBACK = {
     "transfer_window_check": "One moment checking availability."
 }
@@ -92,7 +92,7 @@ if not (AZURE_AI_ENDPOINT and AZURE_AI_KEY):
     raise ValueError("AZURE_AI_ENDPOINT and AZURE_AI_KEY are required")
 
 logger.info("=" * 80)
-logger.info("🎙️ VOICE AGENT - AZURE VOICE LIVE API")
+logger.info("??? VOICE AGENT - AZURE VOICE LIVE API")
 logger.info("=" * 80)
 logger.info(f"Azure Endpoint: {AZURE_AI_ENDPOINT}")
 logger.info(f"Model: {AZURE_AI_MODEL}")
@@ -102,9 +102,9 @@ logger.info(f"Save Recordings: {SAVE_RECORDINGS}")
 logger.info(f"Save Transcripts: {SAVE_TRANSCRIPTS}")
 logger.info("=" * 80)
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # VOICE MAP - OpenAI voice names to Azure TTS voices
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 VOICE_MAP = {
     'alloy': 'alloy',
     'shimmer': 'shimmer',
@@ -140,9 +140,9 @@ AZURE_VOICE_MAP = {
     'aria-multilingual': 'en-US-AriaMultilingualNeural',
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # CALLER ID NORMALIZATION
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 def normalize_caller_id(caller: Optional[str]) -> Optional[str]:
     """
     Extract E.164 phone number from various SIP URI formats.
@@ -175,9 +175,9 @@ def normalize_caller_id(caller: Optional[str]) -> Optional[str]:
 
     return caller  # Return as-is if we can't parse it
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # CALL SESSION (SIMPLIFIED - NO BARGE-IN STATE)
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 class CallSession:
     def __init__(self, company_id: str, call_sid: str):
         self.company_id = company_id
@@ -290,7 +290,7 @@ class CallSession:
                 merged_wav = self._create_merged_stereo_wav(self.caller_audio_chunks, self.ai_audio_chunks)
                 if merged_wav:
                     config_manager.save_call_recording(self.company_id, self.call_sid, merged_wav, "wav")
-                    logger.info(f"✅ Saved merged stereo recording: {self.call_sid}.wav")
+                    logger.info(f"? Saved merged stereo recording: {self.call_sid}.wav")
 
                 # Also save separate mono files (for debugging/backup)
                 if self.caller_audio_chunks:
@@ -308,9 +308,9 @@ class CallSession:
             logger.error(f"Error saving call session: {e}")
             logger.error(traceback.format_exc())
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # SESSION MONITORING AND METRICS
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 class SessionMonitor:
     """Monitor and track Voice Live session metrics"""
 
@@ -333,19 +333,19 @@ class SessionMonitor:
 
         # Warn at thresholds
         if self.token_count > 100000 and self.last_token_warning < 100000:
-            logger.warning(f"⚠️ HIGH TOKEN USAGE: {self.token_count:,}/128,000 ({self.token_count/128000:.1%})")
+            logger.warning(f"?? HIGH TOKEN USAGE: {self.token_count:,}/128,000 ({self.token_count/128000:.1%})")
             self.last_token_warning = 100000
         elif self.token_count > 64000 and self.last_token_warning < 64000:
-            logger.info(f"📈 Token usage at {self.token_count/128000:.1%} of limit")
+            logger.info(f"?? Token usage at {self.token_count/128000:.1%} of limit")
             self.last_token_warning = 64000
 
         if remaining_minutes < 2:
-            logger.warning(f"⏰ Session approaching 15-minute limit: {remaining_minutes:.1f} min remaining")
+            logger.warning(f"? Session approaching 15-minute limit: {remaining_minutes:.1f} min remaining")
 
     def add_turn(self):
         self.turn_count += 1
         if self.turn_count == 10:
-            logger.info(f"💡 Consider text conversion after {self.turn_count} turns to save tokens")
+            logger.info(f"?? Consider text conversion after {self.turn_count} turns to save tokens")
 
     def add_function_call(self, function_name: str):
         self.function_calls.append({
@@ -365,7 +365,7 @@ class SessionMonitor:
     def log_summary(self):
         duration = (datetime.now(UTC) - self.start_time).total_seconds()
         logger.info(f"""
-📊 SESSION SUMMARY for {self.company_id}:
+?? SESSION SUMMARY for {self.company_id}:
    Duration: {duration:.1f}s
    Turns: {self.turn_count}
    Tokens: {self.token_count:,} (~{self.token_count/128000:.1%} of limit)
@@ -375,9 +375,9 @@ class SessionMonitor:
    Avg Turn Time: {duration/max(1, self.turn_count):.1f}s
         """)
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # PROMPT BUILDER (Simplified - Instructions from Blob Storage)
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 def extract_prompt_version(instructions):
     """
     Extract version metadata from prompt instructions.
@@ -440,12 +440,12 @@ def build_company_instructions(company_config):
 
         # Extract and log version metadata
         version_info = extract_prompt_version(instructions)
-        logger.info(f"✅ Loaded instructions from Blob Storage ({len(detailed_instructions)} characters)")
-        logger.info(f"📋 Prompt Version: {version_info['version']} (updated: {version_info['last_updated']}, commit: {version_info['git_commit']})")
-        logger.info(f"📋 Changes: {version_info['changes']}")
+        logger.info(f"? Loaded instructions from Blob Storage ({len(detailed_instructions)} characters)")
+        logger.info(f"?? Prompt Version: {version_info['version']} (updated: {version_info['last_updated']}, commit: {version_info['git_commit']})")
+        logger.info(f"?? Changes: {version_info['changes']}")
     else:
         # Minimal fallback if Blob Storage file missing
-        logger.warning(f"⚠️ No Blob Storage instructions found for {company_name}, using minimal fallback")
+        logger.warning(f"?? No Blob Storage instructions found for {company_name}, using minimal fallback")
         instructions = f"""You are a professional phone agent for {company_name}.
 
 Start every call with: {greeting}
@@ -459,9 +459,9 @@ Answer questions professionally and be helpful. Keep responses concise.
 
     return instructions, openai_voice, greeting
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # AZURE VOICE LIVE API CONNECTION
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 async def create_voicelive_connection(company_instructions, voice_name, audio_settings):
     """
     Create Voice Live API connection with PRODUCTION-GRADE configuration.
@@ -475,7 +475,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
     - Filler word removal: Auto-remove "uh", "um"
     """
     logger.info("=" * 80)
-    logger.info("🚀 Connecting to Azure Voice Live API with production optimizations")
+    logger.info("?? Connecting to Azure Voice Live API with production optimizations")
     logger.info(f"Endpoint: {AZURE_AI_ENDPOINT}")
     logger.info(f"Model: {AZURE_AI_MODEL}")
 
@@ -487,7 +487,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
             model=AZURE_AI_MODEL,
         )  # Returns context manager (not awaitable)
 
-        logger.info("✅ Voice Live connection established")
+        logger.info("? Voice Live connection established")
 
         # Feature flags (all TRUE by default in demo mode)
         use_noise_suppression = audio_settings.get('enable-noise-suppression', True)
@@ -499,15 +499,15 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         if voice_name in AZURE_VOICE_MAP:
             # Use friendly name mapping
             azure_voice_name = AZURE_VOICE_MAP[voice_name]
-            logger.info(f"✅ Azure TTS Voice configured: {azure_voice_name} (mapped from friendly name: {voice_name})")
+            logger.info(f"? Azure TTS Voice configured: {azure_voice_name} (mapped from friendly name: {voice_name})")
         elif voice_name and ("-" in voice_name and "Neural" in voice_name):
             # Looks like a direct Azure voice name (e.g., "en-US-AriaNeural", "es-MX-DaliaNeural")
             azure_voice_name = voice_name
-            logger.info(f"✅ Azure TTS Voice configured: {azure_voice_name} (direct Azure voice name)")
+            logger.info(f"? Azure TTS Voice configured: {azure_voice_name} (direct Azure voice name)")
         else:
             # Fallback to default
             azure_voice_name = "en-US-FableTurboMultilingualNeural"
-            logger.warning(f"⚠️ Voice '{voice_name}' not recognized, using default: {azure_voice_name}")
+            logger.warning(f"?? Voice '{voice_name}' not recognized, using default: {azure_voice_name}")
 
         # Configure Azure TTS voice using settings from Azure App Configuration
         # HD voices (DragonHDLatestNeural) support ONLY temperature and rate parameters
@@ -563,22 +563,22 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
                 auto_truncate=True  # CRITICAL: Cut off AI speech on interrupt
                 # NOTE: end_of_utterance_detection is NOT supported by AzureSemanticVad
             )
-            logger.info(f"✅ Barge-in ENABLED - Semantic VAD (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words}, interrupt=True, auto_truncate=True)")
+            logger.info(f"? Barge-in ENABLED - Semantic VAD (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words}, interrupt=True, auto_truncate=True)")
         else:
             turn_detection_config = None
-            logger.info(f"⚠️ Barge-in DISABLED - Callers cannot interrupt agent")
+            logger.info(f"?? Barge-in DISABLED - Callers cannot interrupt agent")
 
         # Configure noise suppression
         noise_reduction = None
         if use_noise_suppression:
             noise_reduction = AudioNoiseReduction(type="azure_deep_noise_suppression")
-            logger.info("✅ Deep Noise Suppression ENABLED")
+            logger.info("? Deep Noise Suppression ENABLED")
 
         # Configure echo cancellation
         echo_cancellation = None
         if use_echo_cancellation:
             echo_cancellation = AudioEchoCancellation(type="server_echo_cancellation")
-            logger.info("✅ Echo Cancellation ENABLED")
+            logger.info("? Echo Cancellation ENABLED")
 
         # Configure audio transcription
         transcription = None
@@ -590,17 +590,17 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
                 language="en"
             )
 
-            logger.info("✅ Whisper Transcription ENABLED")
+            logger.info("? Whisper Transcription ENABLED")
 
             # Add a warning if the config key still exists
             transcription_prompt_setting = audio_settings.get('transcription-prompt', None)
             if transcription_prompt_setting:
-                logger.warning(f"⚠️ 'transcription-prompt' is set in config, but this SDK version does not support it. Ignoring setting.")
+                logger.warning(f"?? 'transcription-prompt' is set in config, but this SDK version does not support it. Ignoring setting.")
 
-        # ──────────────────────────────────────────────────────────────────────
+        # ----------------------------------------------------------------------
         # FUNCTION CALLING CONFIGURATION
-        # ──────────────────────────────────────────────────────────────────────
-        logger.info("🔧 Configuring function calling tools...")
+        # ----------------------------------------------------------------------
+        logger.info("?? Configuring function calling tools...")
 
         # Define tools using FunctionTool SDK class (compliance-optimized)
         tools = [
@@ -629,7 +629,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
                 }
             )
         ]
-        logger.info(f"✅ Configured {len(tools)} function calling tools: {[t.name for t in tools]}")
+        logger.info(f"? Configured {len(tools)} function calling tools: {[t.name for t in tools]}")
 
         # Create session configuration using SDK typed models
         session_config = RequestSession(
@@ -651,7 +651,7 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
 
         # Log configuration (session will be updated after entering context)
         logger.info("=" * 80)
-        logger.info("✅ PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
+        logger.info("? PRODUCTION-GRADE Voice Live API Ready (Elderly-Optimized)")
         logger.info(f"   Voice: {azure_voice_name}")
         if enable_barge_in:
             logger.info(f"   Barge-in: ENABLED - VAD (threshold={vad_threshold}, prefix_padding={vad_prefix_padding_ms}ms, silence={vad_silence_duration_ms}ms, remove_fillers={remove_filler_words})")
@@ -666,13 +666,13 @@ async def create_voicelive_connection(company_instructions, voice_name, audio_se
         return (connection, session_config)
 
     except Exception as e:
-        logger.error(f"❌ Failed to create Voice Live connection: {e}")
+        logger.error(f"? Failed to create Voice Live connection: {e}")
         logger.error(traceback.format_exc())
         raise
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # CONNECTION RESILIENCE: RETRY LOGIC AND HEARTBEAT
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 async def create_voicelive_connection_with_retry(company_instructions, voice_name, audio_settings, max_retries=3):
     """Create Voice Live connection with exponential backoff retry logic"""
     last_error = None
@@ -680,24 +680,24 @@ async def create_voicelive_connection_with_retry(company_instructions, voice_nam
 
     for attempt in range(retry_count):
         try:
-            logger.info(f"🔄 Connection attempt {attempt + 1}/{retry_count}")
+            logger.info(f"?? Connection attempt {attempt + 1}/{retry_count}")
             connection = await create_voicelive_connection(
                 company_instructions, voice_name, audio_settings
             )
 
-            logger.info("✅ Connection established with retry logic")
+            logger.info("? Connection established with retry logic")
             return connection
 
         except Exception as e:
             last_error = e
             if attempt == retry_count - 1:
-                logger.error(f"❌ All connection attempts failed after {retry_count} tries: {e}")
+                logger.error(f"? All connection attempts failed after {retry_count} tries: {e}")
                 raise
 
             # Exponential backoff: 2, 4, 8... seconds, max 30
             wait_time = min(2 ** (attempt + 1), 30)
-            logger.warning(f"⚠️ Attempt {attempt + 1} failed: {e}")
-            logger.info(f"⏳ Retrying in {wait_time} seconds...")
+            logger.warning(f"?? Attempt {attempt + 1} failed: {e}")
+            logger.info(f"? Retrying in {wait_time} seconds...")
             await asyncio.sleep(wait_time)
 
     raise last_error or Exception("Connection failed")
@@ -708,20 +708,20 @@ async def heartbeat_loop(connection, monitor: SessionMonitor, interval: int = 30
         while True:
             await asyncio.sleep(interval)
             # Connection stays alive through regular event processing
-            logger.debug(f"💓 Connection heartbeat ({interval}s interval)")
+            logger.debug(f"?? Connection heartbeat ({interval}s interval)")
 
     except asyncio.CancelledError:
-        logger.info("💔 Heartbeat task cancelled")
+        logger.info("?? Heartbeat task cancelled")
     except Exception as e:
-        logger.error(f"💔 Heartbeat error: {e}")
+        logger.error(f"?? Heartbeat error: {e}")
         monitor.add_error(f"Heartbeat failed: {e}")
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # FUNCTION EXECUTION HANDLER
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 async def execute_function(function_name: str, arguments: dict) -> dict:
     """Execute tool functions and return results"""
-    logger.info(f"🔧 Executing function: {function_name} with args: {arguments}")
+    logger.info(f"?? Executing function: {function_name} with args: {arguments}")
 
     try:
         if function_name == "lookup_zipcode":
@@ -807,13 +807,13 @@ async def execute_function(function_name: str, arguments: dict) -> dict:
             return {"error": f"Unknown function: {function_name}"}
 
     except Exception as e:
-        logger.error(f"❌ Error executing function {function_name}: {e}")
+        logger.error(f"? Error executing function {function_name}: {e}")
         logger.error(traceback.format_exc())
         return {"error": f"Function execution failed: {str(e)}"}
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # FASTAPI APP
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 app = FastAPI(title="Voice Agent Bridge")
 
 @app.get("/")
@@ -850,9 +850,9 @@ def root():
         ]
     }
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # CALLER ID CACHE (for cXML webhook integration)
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Store caller ID from initial webhook, retrieved later during WebSocket connection
 call_metadata_cache: Dict[str, Dict[str, Any]] = {}
 
@@ -863,7 +863,7 @@ def cache_call_metadata(call_sid: str, metadata: Dict[str, Any], ttl_seconds: in
         **metadata,
         "_expires_at": time.time() + ttl_seconds
     }
-    logger.info(f"📝 Cached metadata for call {call_sid}: {metadata}")
+    logger.info(f"?? Cached metadata for call {call_sid}: {metadata}")
 
 def get_cached_call_metadata(call_sid: str) -> Optional[Dict[str, Any]]:
     """Retrieve cached call metadata if not expired"""
@@ -897,7 +897,7 @@ async def signalwire_call_webhook(company_id: str, request: Request):
         from_number = form_data.get("From")
         to_number = form_data.get("To")
 
-        logger.info(f"📞 Webhook received: CallSid={call_sid}, From={from_number}, To={to_number}")
+        logger.info(f"?? Webhook received: CallSid={call_sid}, From={from_number}, To={to_number}")
 
         # Cache the call metadata
         if call_sid and from_number:
@@ -921,7 +921,7 @@ async def signalwire_call_webhook(company_id: str, request: Request):
         return Response(content=cxml_response, media_type="application/xml")
 
     except Exception as e:
-        logger.error(f"❌ Webhook error: {e}")
+        logger.error(f"? Webhook error: {e}")
         logger.error(traceback.format_exc())
         return Response(content='<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>',
                        media_type="application/xml")
@@ -944,9 +944,9 @@ def get_company_audio_settings(company_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # COST MONITORING API ENDPOINTS
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 @app.get("/costs/daily")
 def get_daily_costs(date: Optional[str] = None):
@@ -1018,9 +1018,9 @@ def get_pricing_info():
         }
     }
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # MAIN WEBSOCKET BRIDGE
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 @app.websocket("/voice/{company_id}")
 async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
     await signalwire_ws.accept()
@@ -1030,9 +1030,9 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
 
     # DEBUG: Log all query parameters
     if query_params:
-        logger.info(f"🔍 Query parameters received: {query_params}")
+        logger.info(f"?? Query parameters received: {query_params}")
     else:
-        logger.info(f"🔍 No query parameters in WebSocket URL")
+        logger.info(f"?? No query parameters in WebSocket URL")
 
     # Try to get caller ID from:
     # 1. Query parameters (direct pass-through)
@@ -1045,12 +1045,12 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         cached_metadata = get_cached_call_metadata(call_sid_param)
         if cached_metadata:
             query_caller_id = cached_metadata.get("from")
-            logger.info(f"✅ Retrieved caller ID from cache: {query_caller_id}")
+            logger.info(f"? Retrieved caller ID from cache: {query_caller_id}")
 
     if query_caller_id:
-        logger.info(f"✅ SignalWire connection accepted for company: {company_id} (Caller ID: {query_caller_id})")
+        logger.info(f"? SignalWire connection accepted for company: {company_id} (Caller ID: {query_caller_id})")
     else:
-        logger.info(f"✅ SignalWire connection accepted for company: {company_id}")
+        logger.info(f"? SignalWire connection accepted for company: {company_id}")
 
     try:
         company_config = get_cached_config(company_id)
@@ -1063,7 +1063,7 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
         
         company_name = company_config['company-name']
         audio_settings = company_config.get('audio-settings', {})
-        logger.info(f"✅ Loaded config for {company_name}")
+        logger.info(f"? Loaded config for {company_name}")
     except Exception as e:
         msg = f"Failed to load company configuration: {e}"
         logger.error(msg)
@@ -1098,12 +1098,12 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
 
             # Configure session AFTER entering context (when .session is available)
             await voicelive_connection.session.update(session=session_config)
-            logger.info("✅ Voice Live session configured successfully with function calling")
+            logger.info("? Voice Live session configured successfully with function calling")
 
             # Log connection lifecycle for monitoring
             call_start = datetime.now(UTC)
             logger.info(
-                "🔌 Voice Live connection opened",
+                "?? Voice Live connection opened",
                 extra={
                     "call_sid": call_sid_param or "pending",  # Use query param or "pending" (stream not started yet)
                     "company_id": company_id,
@@ -1116,13 +1116,13 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
                 heartbeat_loop(voicelive_connection, shared_state["monitor"], heartbeat_interval)
             )
 
-            logger.info(f"✅ Voice Live API connected with monitoring for {company_name}")
+            logger.info(f"? Voice Live API connected with monitoring for {company_name}")
 
             # Start bidirectional audio forwarding
             audio_sender_task = asyncio.create_task(
                 send_signalwire_audio_to_voicelive(signalwire_ws, voicelive_connection, company_id, company_name, shared_state, greeting_text)
             )
-            logger.info(f"🎙️ {company_name} agent ready for calls!")
+            logger.info(f"??? {company_name} agent ready for calls!")
 
             try:
                 # Process events from Voice Live API
@@ -1179,7 +1179,7 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
                 session_call_sid = call_session.call_sid if call_session else None
 
                 logger.info(
-                    "🔌 Voice Live connection closed",
+                    "?? Voice Live connection closed",
                     extra={
                         "call_sid": session_call_sid or call_sid_param or "unknown",
                         "company_id": company_id,
@@ -1198,12 +1198,14 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
             await signalwire_ws.send_text(json.dumps({"type": "error", "source": "voicelive", "detail": str(e)}))
             await signalwire_ws.close(code=1011)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# VOICE LIVE → SIGNALWIRE EVENT HANDLER
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
+# VOICE LIVE ? SIGNALWIRE EVENT HANDLER
+# ------------------------------------------------------------------------------
 
 # Response tracking to detect and suppress audio-only responses (prevents <|audio_text|> token)
 INVALID_TOKEN_LITERALS = {"<|audio_text|>", "<|text_hbr_audio|>", "<|end_of_text|>"}
+AUDIO_VALIDATION_HOLD_SECONDS = 0.75  # Max time to buffer audio while waiting for safe transcript
+AUDIO_BUFFER_MAX_CHUNKS = 48  # Safety cap to avoid unbounded buffering
 
 
 class ResponseTracker:
@@ -1216,6 +1218,9 @@ class ResponseTracker:
         self.recovery_attempted = False  # Prevent double recovery after invalid token suppression
         self.suppress_next_audio_chunk = False  # Suppress only the chunk tied to invalid token
         self.chunks_to_suppress = 0  # Counter for multiple chunk suppression (audio arrives before transcript)
+        self.awaiting_assistant_text = True  # Gate audio streaming until we have safe assistant text
+        self.audio_buffer: List[bytes] = []  # Buffer of audio chunks waiting for validation
+        self.audio_hold_started_at: Optional[float] = None
 
     def start_response(self):
         """Reset for new response"""
@@ -1226,6 +1231,9 @@ class ResponseTracker:
         self.recovery_attempted = False  # Reset recovery flag
         self.suppress_next_audio_chunk = False  # Reset per-chunk suppression flag
         self.chunks_to_suppress = 0  # Reset chunk counter
+        self.awaiting_assistant_text = True
+        self.audio_buffer = []
+        self.audio_hold_started_at = time()
 
     def add_transcript_delta(self, delta_text: str):
         """Add transcript delta and check for invalid tokens"""
@@ -1234,26 +1242,84 @@ class ResponseTracker:
         # Check if the accumulated buffer contains specific invalid tokens
         # Using explicit list instead of broad regex to avoid false positives
         if any(token in self.transcript_buffer for token in INVALID_TOKEN_LITERALS):
-            logger.error(f"🚨 INVALID TOKEN DETECTED IN TRANSCRIPT BUFFER: '{self.transcript_buffer}'")
+            logger.error(f"dYs? INVALID TOKEN DETECTED IN TRANSCRIPT BUFFER: '{self.transcript_buffer}'")
             self.has_invalid_token = True
             self.suppress_next_audio_chunk = True
             self.chunks_to_suppress = 5  # Suppress multiple chunks since audio arrives before transcript
+            self.drop_audio_buffer()
             return True  # Signal that invalid token was found
         return False
 
-    def mark_text_received(self):
-        """Mark that text was received for current response"""
+    def mark_text_received(self, from_assistant: bool = True) -> bool:
+        """Mark that assistant text was received; returns True if this is the first assistant text chunk"""
+        if not from_assistant:
+            return False
+        first_text = not self.current_response_has_text
         self.current_response_has_text = True
+        if first_text:
+            self.awaiting_assistant_text = False
+        return first_text
 
     def mark_invalid_token(self):
         """Mark that response contains invalid token (suppresses next audio chunks)"""
         self.has_invalid_token = True
         self.suppress_next_audio_chunk = True
         self.chunks_to_suppress = 5  # Suppress multiple chunks to catch bad audio
+        self.awaiting_assistant_text = False
+        self.drop_audio_buffer()
 
     def should_forward_audio(self) -> bool:
         """Return True if audio should be forwarded (has text and no invalid tokens)"""
         return self.current_response_has_text and not self.has_invalid_token
+
+    def should_buffer_audio(self) -> bool:
+        """Return True if audio should stay buffered until assistant text is validated
+
+        Note: This is a pure query method - call check_buffer_timeout() separately
+        to handle timeout side effects.
+        """
+        return self.awaiting_assistant_text
+
+    def check_buffer_timeout(self) -> bool:
+        """Check if buffer timeout exceeded and update state if needed
+
+        Returns:
+            bool: True if timeout was just exceeded and buffer should be flushed
+        """
+        if not self.awaiting_assistant_text:
+            return False
+        if self.audio_hold_started_at and (time() - self.audio_hold_started_at) > AUDIO_VALIDATION_HOLD_SECONDS:
+            logger.warning("dYs? Audio hold exceeded 750ms while waiting for transcript - releasing buffer to avoid long silence")
+            self.awaiting_assistant_text = False
+            return True  # Timeout exceeded - caller should flush
+        return False
+
+    def buffer_audio_chunk(self, chunk: bytes) -> bool:
+        """Store audio chunks until we confirm the transcript is safe
+
+        Returns:
+            bool: True if buffer cap was just reached and should be flushed immediately
+        """
+        self.audio_buffer.append(chunk)
+        if len(self.audio_buffer) >= AUDIO_BUFFER_MAX_CHUNKS:
+            logger.warning("⚠️ Audio buffer reached safety cap before transcript validation - forcing release")
+            self.awaiting_assistant_text = False
+            return True  # Cap reached - caller should flush immediately
+        return False
+
+    def drain_audio_buffer(self) -> List[bytes]:
+        """Return buffered chunks and clear the buffer"""
+        if not self.audio_buffer:
+            return []
+        buffered = self.audio_buffer[:]
+        self.audio_buffer.clear()
+        return buffered
+
+    def drop_audio_buffer(self):
+        """Discard buffered chunks (used when invalid tokens are detected)"""
+        if self.audio_buffer:
+            logger.warning(f"dYs? Dropping {len(self.audio_buffer)} buffered audio chunk(s) due to invalid token detection")
+        self.audio_buffer.clear()
 
     def should_suppress_next_chunk(self) -> bool:
         """Return True if the next audio chunk should be suppressed"""
@@ -1274,12 +1340,51 @@ class ResponseTracker:
     def log_suppression(self):
         """Log if audio was suppressed"""
         if self.has_invalid_token and self.suppressed_audio_count > 0:
-            logger.warning(f"⚠️ Suppressed {self.suppressed_audio_count} audio chunks containing invalid <|audio_text|> token")
+            logger.warning(f"?s??,? Suppressed {self.suppressed_audio_count} audio chunks containing invalid <|audio_text|> token")
         elif not self.current_response_has_text and self.suppressed_audio_count > 0:
-            logger.warning(f"⚠️ Suppressed {self.suppressed_audio_count} audio-only chunks (no text)")
-
+            logger.warning(f"?s??,? Suppressed {self.suppressed_audio_count} audio-only chunks (no text)")
 # Global response tracker instance
 response_tracker = ResponseTracker()
+
+
+async def _forward_audio_chunk(
+    audio_bytes: bytes,
+    signalwire_ws: WebSocket,
+    stream_sid: Optional[str],
+    call_session: Optional[CallSession]
+):
+    """Encode audio chunk to base64, optionally save it, and forward to SignalWire"""
+    audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+
+    if call_session and SAVE_RECORDINGS:
+        try:
+            call_session.add_ai_audio(audio_b64)
+        except Exception:
+            pass
+
+    logger.debug("dY\"S Forwarding audio to SignalWire")
+    await signalwire_ws.send_text(json.dumps({
+        "event": "media",
+        "streamSid": stream_sid or "",
+        "media": {"payload": audio_b64}
+    }))
+
+
+async def _flush_buffered_audio(
+    tracker: ResponseTracker,
+    signalwire_ws: WebSocket,
+    stream_sid: Optional[str],
+    call_session: Optional[CallSession]
+):
+    """Flush any buffered audio chunks now that transcript validation succeeded"""
+    buffered_chunks = tracker.drain_audio_buffer()
+    if not buffered_chunks:
+        return
+
+    logger.debug(f"dY\"S Releasing {len(buffered_chunks)} buffered audio chunk(s) after transcript validation")
+    for chunk in buffered_chunks:
+        await _forward_audio_chunk(chunk, signalwire_ws, stream_sid, call_session)
+
 
 async def handle_voicelive_event(
     event,  # Voice Live SDK event object
@@ -1292,28 +1397,29 @@ async def handle_voicelive_event(
     shared_state: Optional[Dict[str, Any]] = None  # Add shared_state for context injection
 ):
     """Handle events from Voice Live API and forward to SignalWire"""
-    logger.debug(f"📥 Voice Live event: {event.type}")
+    logger.debug(f"?? Voice Live event: {event.type}")
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # COMPANY-SPECIFIC BEHAVIOR CONTROL
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # Determine if using minimal mode (test-basic company)
     company_id = shared_state.get("company_id") if shared_state else None
     is_minimal = (company_id == "test-basic")
 
     if is_minimal:
-        logger.debug("🔧 Minimal mode active - bypassing complex logic")
+        logger.debug("?? Minimal mode active - bypassing complex logic")
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # TRANSCRIPT LOGGING
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # Log user speech transcripts
     event_type_str = str(event.type)
+    event_type_lower = event_type_str.lower()
 
     # Special handling for response.audio_transcript.delta - strip invalid tokens
     # ONLY for non-minimal mode (test-basic skips this complexity)
     if not is_minimal:
-        if event_type_str == 'ServerEventType.RESPONSE_AUDIO_TRANSCRIPT_DELTA' or 'audio_transcript.delta' in event_type_str.lower():
+        if event_type_str == 'ServerEventType.RESPONSE_AUDIO_TRANSCRIPT_DELTA' or 'audio_transcript.delta' in event_type_lower:
             if hasattr(event, 'delta') and event.delta:
                 delta_text = str(event.delta)
 
@@ -1322,12 +1428,12 @@ async def handle_voicelive_event(
                 for literal in INVALID_TOKEN_LITERALS:
                     if literal in stripped_delta:
                         stripped_delta = stripped_delta.replace(literal, "")
-                        logger.debug(f"🧹 Stripped denylisted literal '{literal}' from transcript delta")
+                        logger.debug(f"?? Stripped denylisted literal '{literal}' from transcript delta")
 
                 # If nothing remains after stripping, skip buffering
                 if not stripped_delta.strip():
                     if delta_text.strip():  # Only log if there was content before stripping
-                        logger.debug(f"⏭️ Skipping transcript delta after stripping denylisted literals: '{delta_text}'")
+                        logger.debug(f"?? Skipping transcript delta after stripping denylisted literals: '{delta_text}'")
                     return
 
                 # Add to buffer and check for invalid tokens
@@ -1335,10 +1441,16 @@ async def handle_voicelive_event(
                     # Invalid token detected! Suppress audio and log
                     logger.error("🚨 INVALID TOKEN IN DELTA - Audio will be suppressed")
                     return
+
+                # Mark that we received clean assistant text and flush buffered audio
+                first_text = response_tracker.mark_text_received(from_assistant=True)
+                if first_text:
+                    await _flush_buffered_audio(response_tracker, signalwire_ws, stream_sid, call_session)
+
                 # Don't log individual delta characters/words - too noisy
                 return  # Skip further processing for delta events
 
-    if 'transcription' in event_type_str.lower() or 'transcript' in event_type_str.lower():
+    if 'transcription' in event_type_lower or 'transcript' in event_type_lower:
         transcript_text = None
         if hasattr(event, 'transcript'):
             transcript_text = event.transcript
@@ -1363,34 +1475,38 @@ async def handle_voicelive_event(
 
                 if matched_tokens:
                     if cleaned_transcript:
-                        logger.info(f"ℹ️ Stripped invalid token(s) {matched_tokens} from transcript")
+                        logger.info(f"?? Stripped invalid token(s) {matched_tokens} from transcript")
                     else:
-                        logger.warning(f"🚫 Dropped transcript containing only invalid token(s) {matched_tokens}")
+                        logger.warning(f"?? Dropped transcript containing only invalid token(s) {matched_tokens}")
                         response_tracker.mark_invalid_token()
                         return
 
                 if cleaned_transcript and cleaned_transcript not in INVALID_TOKENS:
                     # Note: This could be user OR assistant transcript depending on event type
-                    logger.info(f"📝 TRANSCRIPT: {cleaned_transcript}")
-                    response_tracker.mark_text_received()
+                    logger.info(f"?? TRANSCRIPT: {cleaned_transcript}")
+                    is_assistant_transcript = "response" in event_type_lower
+                    if is_assistant_transcript:
+                        first_assistant_text = response_tracker.mark_text_received(from_assistant=True)
+                        if first_assistant_text:
+                            await _flush_buffered_audio(response_tracker, signalwire_ws, stream_sid, call_session)
 
                     # Save transcript to session
                     if call_session:
                         # Determine speaker based on event type
-                        speaker = "assistant" if "response" in event_type_str.lower() else "user"
+                        speaker = "assistant" if is_assistant_transcript else "user"
                         call_session.add_transcript_entry(speaker, cleaned_transcript)
                 else:
-                    logger.warning(f"🚫 FILTERED INVALID TRANSCRIPT CONTENT: '{transcript_text}'")
+                    logger.warning(f"?? FILTERED INVALID TRANSCRIPT CONTENT: '{transcript_text}'")
             else:
                 # Minimal mode: just log and save transcript, no filtering
-                logger.info(f"📝 TRANSCRIPT: {transcript_text}")
+                logger.info(f"?? TRANSCRIPT: {transcript_text}")
                 if call_session:
-                    speaker = "assistant" if "response" in event_type_str.lower() else "user"
+                    speaker = "assistant" if "response" in event_type_lower else "user"
                     call_session.add_transcript_entry(speaker, transcript_text)
 
     # Log AI response text and filter invalid tokens (ONLY in non-minimal mode)
     if not is_minimal:
-        if 'text' in event_type_str.lower() and 'delta' in event_type_str.lower():
+        if 'text' in event_type_lower and 'delta' in event_type_lower:
             response_text = None
             if hasattr(event, 'delta'):
                 response_text = event.delta
@@ -1412,35 +1528,37 @@ async def handle_voicelive_event(
 
                 if matched_tokens:
                     if cleaned_response:
-                        logger.info(f"ℹ️ Stripped invalid token(s) {matched_tokens} from text delta")
+                        logger.info(f"?? Stripped invalid token(s) {matched_tokens} from text delta")
                     else:
                         delta_is_token_only = True
-                        logger.warning(f"🚫 Dropped invalid token-only text delta: {matched_tokens}")
+                        logger.warning(f"?? Dropped invalid token-only text delta: {matched_tokens}")
 
                 if cleaned_response and cleaned_response not in INVALID_TOKENS:
-                    logger.info(f"💬 AI RESPONSE TEXT: {cleaned_response}")
+                    logger.info(f"?? AI RESPONSE TEXT: {cleaned_response}")
                     # Mark that valid text was received for this response
-                    response_tracker.mark_text_received()
+                    first_text_chunk = response_tracker.mark_text_received(from_assistant=True)
+                    if first_text_chunk:
+                        await _flush_buffered_audio(response_tracker, signalwire_ws, stream_sid, call_session)
                 elif cleaned_response in INVALID_TOKENS:
-                    logger.warning(f"🚫 Dropped empty/invalid text delta: '{response_text}'")
+                    logger.warning(f"?? Dropped empty/invalid text delta: '{response_text}'")
                     response_tracker.mark_invalid_token()
 
                 if delta_is_token_only:
                     response_tracker.mark_invalid_token()
 
     # Log content parts (might contain text)
-    if 'content_part' in event_type_str.lower() or 'output_item' in event_type_str.lower():
+    if 'content_part' in event_type_lower or 'output_item' in event_type_lower:
         if hasattr(event, 'part') and hasattr(event.part, 'text'):
-            logger.info(f"💬 AI RESPONSE: {event.part.text}")
+            logger.info(f"?? AI RESPONSE: {event.part.text}")
         elif hasattr(event, 'item'):
             if hasattr(event.item, 'content') and isinstance(event.item.content, list):
                 for content in event.item.content:
                     if hasattr(content, 'text'):
-                        logger.info(f"💬 AI RESPONSE: {content.text}")
+                        logger.info(f"?? AI RESPONSE: {content.text}")
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # TOKEN USAGE AND RATE LIMIT MONITORING
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # Monitor token usage
     if hasattr(event, 'usage') or 'usage' in str(event.type).lower():
         if monitor and hasattr(event, 'usage'):
@@ -1450,7 +1568,7 @@ async def handle_voicelive_event(
                 output_tokens = usage.output_tokens
                 total_tokens = input_tokens + output_tokens
 
-                logger.info(f"📊 Token usage - Input: {input_tokens:,}, Output: {output_tokens:,}, Total: {total_tokens:,}")
+                logger.info(f"?? Token usage - Input: {input_tokens:,}, Output: {output_tokens:,}, Total: {total_tokens:,}")
                 monitor.add_tokens(input_tokens, output_tokens)
 
     # Track rate limits
@@ -1460,7 +1578,7 @@ async def handle_voicelive_event(
             if hasattr(rate_limits, 'remaining_tokens'):
                 remaining = rate_limits.remaining_tokens
                 if remaining < 10000:
-                    logger.warning(f"⚠️ Rate limit warning: {remaining:,} tokens remaining")
+                    logger.warning(f"?? Rate limit warning: {remaining:,} tokens remaining")
 
     # Track VAD events for monitoring
     if monitor:
@@ -1472,22 +1590,22 @@ async def handle_voicelive_event(
             error_msg = getattr(event, 'error', {}).get('message', 'Unknown error') if hasattr(event, 'error') else 'Unknown error'
             monitor.add_error(error_msg)
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # STANDARD EVENT HANDLING
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     if event.type == ServerEventType.SESSION_UPDATED:
-        logger.info(f"✅ {company_name} Voice Live session ready")
+        logger.info(f"? {company_name} Voice Live session ready")
 
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STARTED:
         # BARGE-IN HANDLING: Only for non-minimal mode
         if not is_minimal:
             # v17.6: Check if this is REAL barge-in or normal turn-taking
             if call_session and call_session.agent_is_speaking:
-                logger.info("🎤 REAL BARGE-IN: Caller interrupting Sarah - executing cancellation")
+                logger.info("?? REAL BARGE-IN: Caller interrupting Sarah - executing cancellation")
 
-                # ══════════════════════════════════════════════════════════════════
+                # ------------------------------------------------------------------
                 # TRIPLE-ACTION BARGE-IN PATTERN (Distributed Cancellation)
-                # ══════════════════════════════════════════════════════════════════
+                # ------------------------------------------------------------------
 
                 # ACTION 1: Clear SignalWire audio buffer (stops playback immediately)
                 if stream_sid and signalwire_ws.application_state == WebSocketState.CONNECTED:
@@ -1496,14 +1614,14 @@ async def handle_voicelive_event(
                             "event": "clear",
                             "streamSid": stream_sid
                         })
-                        logger.info("🔇 ACTION 1: Sent CLEAR to SignalWire - flushed audio buffer")
+                        logger.info("?? ACTION 1: Sent CLEAR to SignalWire - flushed audio buffer")
                     except Exception as e:
                         logger.warning(f"Failed to clear SignalWire buffer: {e}")
 
                 # ACTION 2: Cancel Azure response generation
                 try:
                     await voicelive_connection.response.cancel()
-                    logger.info("🛑 ACTION 2: Sent response.cancel to Azure")
+                    logger.info("?? ACTION 2: Sent response.cancel to Azure")
                 except Exception as e:
                     logger.warning(f"Failed to cancel response: {e}")
 
@@ -1522,40 +1640,40 @@ async def handle_voicelive_event(
                     # Use SDK's send method (send dict, not JSON string)
                     if hasattr(voicelive_connection, 'send'):
                         await voicelive_connection.send(raw_message)
-                        logger.info("💬 ACTION 3: Injected interruption context via connection.send()")
+                        logger.info("?? ACTION 3: Injected interruption context via connection.send()")
                     elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
                         await voicelive_connection._connection.send(raw_message)
-                        logger.info("💬 ACTION 3: Injected interruption context via _connection.send()")
+                        logger.info("?? ACTION 3: Injected interruption context via _connection.send()")
                     else:
-                        logger.warning("⚠️ Could not access send method for context injection")
+                        logger.warning("?? Could not access send method for context injection")
                 except Exception as e:
                     logger.warning(f"Failed to inject context: {e}")
 
                 # Clear flag immediately (response was cancelled)
                 call_session.agent_is_speaking = False
-                logger.debug("🔇 Agent speaking flag CLEARED (interrupted)")
+                logger.debug("?? Agent speaking flag CLEARED (interrupted)")
 
             else:
                 # Normal turn-taking: Sarah finished, user responding naturally
-                logger.info("🎤 User started speaking (normal turn-taking, no interruption)")
+                logger.info("?? User started speaking (normal turn-taking, no interruption)")
         else:
             # Minimal mode: just log that user started speaking
-            logger.info("🎤 User started speaking (minimal mode - no barge-in logic)")
+            logger.info("?? User started speaking (minimal mode - no barge-in logic)")
 
     elif event.type == ServerEventType.INPUT_AUDIO_BUFFER_SPEECH_STOPPED:
-        logger.info("🎤 Caller stopped speaking")
+        logger.info("?? Caller stopped speaking")
 
         # GRACE PERIOD: Only in non-minimal mode
         if not is_minimal:
             # Wait 500ms for transcript to arrive before AI responds
             # This prevents race condition where AI responds before hearing the transcript
             # Evidence from production: transcript takes ~360ms to arrive after VAD stops
-            logger.info("⏳ Waiting 500ms grace period for transcript...")
+            logger.info("? Waiting 500ms grace period for transcript...")
             await asyncio.sleep(0.5)
-            logger.info("✅ Grace period complete, transcript should be available")
+            logger.info("? Grace period complete, transcript should be available")
 
     elif event.type == ServerEventType.RESPONSE_CREATED:
-        logger.info(f"🤖 {company_name} AI responding")
+        logger.info(f"?? {company_name} AI responding")
 
         # Reset response tracker for new response (ONLY in non-minimal mode)
         if not is_minimal:
@@ -1564,7 +1682,7 @@ async def handle_voicelive_event(
             # Mark agent as speaking (v17.6 - for barge-in detection)
             if call_session:
                 call_session.agent_is_speaking = True
-                logger.debug("🔊 Agent speaking flag SET")
+                logger.debug("?? Agent speaking flag SET")
 
     elif event.type == ServerEventType.RESPONSE_AUDIO_DELTA:
         if signalwire_ws.application_state != WebSocketState.CONNECTED:
@@ -1575,46 +1693,50 @@ async def handle_voicelive_event(
         if not audio_bytes:
             return
 
-        # CRITICAL: Audio suppression for invalid tokens (ONLY in non-minimal mode)
-        suppress_chunk = False
+        # CRITICAL: Audio suppression & buffering (ONLY in non-minimal mode)
         if not is_minimal:
-            # Suppress only the chunk tied to the invalid token, then resume
-            if response_tracker.should_suppress_next_chunk():
-                suppress_chunk = True
-
-            # Additional safety check: If this is string data instead of bytes, it's likely a token
+            # Additional safety check: string data likely means malformed token payload
             if isinstance(audio_bytes, str):
-                logger.warning(f"🚫 SUPPRESSING STRING AUDIO DATA: '{audio_bytes}' (expected bytes)")
+                logger.warning(f"?? SUPPRESSING STRING AUDIO DATA: '{audio_bytes}' (expected bytes)")
                 response_tracker.mark_invalid_token()
-                suppress_chunk = True
-
-            if suppress_chunk:
                 response_tracker.suppress_audio()
                 response_tracker.clear_chunk_suppression()
-                if not isinstance(audio_bytes, str):
-                    logger.warning("🚫 SUPPRESSING AUDIO CHUNK - Invalid token detected (preventing 'audio underscore text' speech)")
                 return
 
-        # Convert bytes to base64 for SignalWire
-        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+            # Suppress only the chunk tied to the invalid token, then resume
+            if response_tracker.should_suppress_next_chunk():
+                response_tracker.suppress_audio()
+                response_tracker.clear_chunk_suppression()
+                logger.warning("?? SUPPRESSING AUDIO CHUNK - Invalid token detected (preventing 'audio underscore text' speech)")
+                return
 
-        # Save AI audio for recording
-        if call_session and SAVE_RECORDINGS:
-            try:
-                call_session.add_ai_audio(audio_b64)
-            except Exception:
-                pass
+            # Buffer audio until we have validated assistant text to avoid leaking control tokens
+            if response_tracker.should_buffer_audio():
+                # Check timeout first before buffering
+                timeout_exceeded = response_tracker.check_buffer_timeout()
+                if timeout_exceeded:
+                    # Timeout exceeded - flush immediately
+                    await _flush_buffered_audio(response_tracker, signalwire_ws, stream_sid, call_session)
+                    logger.debug("?? Buffer timeout exceeded - flushed all buffered audio")
+                else:
+                    # Buffer this chunk and check if cap reached
+                    cap_reached = response_tracker.buffer_audio_chunk(audio_bytes)
+                    if cap_reached:
+                        # Buffer cap reached - flush immediately
+                        await _flush_buffered_audio(response_tracker, signalwire_ws, stream_sid, call_session)
+                        logger.debug("?? Buffer cap reached - flushed all buffered audio")
+                    else:
+                        logger.debug("?? Buffering audio chunk while waiting for transcript validation")
+                return
 
-        # Forward audio to SignalWire
-        logger.debug("🔊 Forwarding audio to SignalWire")
-        await signalwire_ws.send_text(json.dumps({
-            "event": "media",
-            "streamSid": stream_sid or "",
-            "media": {"payload": audio_b64}
-        }))
+            # Flush any buffered audio now that transcript validation has passed
+            await _flush_buffered_audio(response_tracker, signalwire_ws, stream_sid, call_session)
+
+        # Forward audio to SignalWire (minimal mode streams immediately)
+        await _forward_audio_chunk(audio_bytes, signalwire_ws, stream_sid, call_session)
 
     elif event.type == ServerEventType.RESPONSE_AUDIO_DONE:
-        logger.info(f"🤖 {company_name} finished speaking")
+        logger.info(f"?? {company_name} finished speaking")
         # Log if we suppressed audio-only chunks (ONLY in non-minimal mode)
         if not is_minimal:
             response_tracker.log_suppression()
@@ -1624,18 +1746,18 @@ async def handle_voicelive_event(
         response_status = getattr(event, 'response', None)
         if response_status and hasattr(response_status, 'status'):
             if response_status.status == "cancelled":
-                logger.info("✅ Response cancelled successfully (barge-in)")
+                logger.info("? Response cancelled successfully (barge-in)")
             else:
-                logger.info(f"✅ Response complete (status: {response_status.status})")
+                logger.info(f"? Response complete (status: {response_status.status})")
         else:
-            logger.info("✅ Response complete")
+            logger.info("? Response complete")
 
         # Mark agent as not speaking and log suppression (ONLY in non-minimal mode)
         if not is_minimal:
             # Mark agent as not speaking (v17.6 - for barge-in detection)
             if call_session:
                 call_session.agent_is_speaking = False
-                logger.debug("🔇 Agent speaking flag CLEARED")
+                logger.debug("?? Agent speaking flag CLEARED")
 
             # Log if we suppressed audio-only chunks
             response_tracker.log_suppression()
@@ -1645,7 +1767,7 @@ async def handle_voicelive_event(
 
     elif event.type == ServerEventType.ERROR:
         error_msg = getattr(event, 'error', {}).get('message', 'Unknown error') if hasattr(event, 'error') else 'Unknown error'
-        logger.error(f"❌ Voice Live error: {error_msg}")
+        logger.error(f"? Voice Live error: {error_msg}")
         if signalwire_ws.application_state == WebSocketState.CONNECTED:
             await signalwire_ws.send_text(json.dumps({
                 "type": "error",
@@ -1653,15 +1775,15 @@ async def handle_voicelive_event(
                 "detail": error_msg
             }))
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # FUNCTION CALLING EVENT HANDLING
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # Try to detect function call events - SDK may use different event types
     event_type_str = str(event.type) if hasattr(event, 'type') else None
 
     # Method 1: Check if this is a function call event
     if event_type_str and 'function_call' in event_type_str.lower():
-        logger.info(f"🔧 Function call event detected: {event_type_str}")
+        logger.info(f"?? Function call event detected: {event_type_str}")
 
         # Try to extract function call details
         function_name = None
@@ -1691,7 +1813,7 @@ async def handle_voicelive_event(
                 try:
                     feedback_msg = FUNCTION_FEEDBACK[function_name]
                     await voicelive_connection.send_text(feedback_msg)
-                    logger.info(f"💬 Pre-function feedback: '{feedback_msg}'")
+                    logger.info(f"?? Pre-function feedback: '{feedback_msg}'")
                 except Exception as e:
                     logger.warning(f"Failed to send pre-function feedback: {e}")
 
@@ -1713,29 +1835,29 @@ async def handle_voicelive_event(
                     }
                 }
 
-                logger.info("📤 Sending function result via SDK send method...")
+                logger.info("?? Sending function result via SDK send method...")
 
                 # Use the SDK's send method directly (send dict, not JSON string)
                 if hasattr(voicelive_connection, 'send'):
                     await voicelive_connection.send(raw_message)
-                    logger.info("✅ Function result sent via connection.send()")
+                    logger.info("? Function result sent via connection.send()")
                 elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
                     await voicelive_connection._connection.send(raw_message)
-                    logger.info("✅ Function result sent via _connection.send()")
+                    logger.info("? Function result sent via _connection.send()")
                 else:
                     # Log available attributes for debugging
                     attrs = [a for a in dir(voicelive_connection) if not a.startswith('__')]
-                    logger.error(f"⚠️ No send method found. Available: {attrs[:15]}")
+                    logger.error(f"?? No send method found. Available: {attrs[:15]}")
                     raise AttributeError("Cannot access send method on connection")
 
                 # Trigger the next response so AI can speak the result
                 if hasattr(voicelive_connection, 'response'):
                     await voicelive_connection.response.create()
-                    logger.info("✅ Triggered response.create() to continue conversation")
+                    logger.info("? Triggered response.create() to continue conversation")
 
             except Exception as e:
                 # WebSocket bypass failed
-                logger.error(f"❌ WebSocket bypass failed: {e}")
+                logger.error(f"? WebSocket bypass failed: {e}")
                 logger.error(traceback.format_exc())
 
                 try:
@@ -1759,9 +1881,9 @@ async def handle_voicelive_event(
                         await voicelive_connection.response.create(
                             additional_instructions=recovery_prompt
                         )
-                        logger.info("✅ Triggered SDK response.create() for graceful tool failure recovery.")
+                        logger.info("? Triggered SDK response.create() for graceful tool failure recovery.")
                 except Exception as recovery_e:
-                    logger.critical(f"❌ TOTAL FAILURE: Could not send function result AND could not trigger recovery response: {recovery_e}")
+                    logger.critical(f"? TOTAL FAILURE: Could not send function result AND could not trigger recovery response: {recovery_e}")
                     logger.error(traceback.format_exc())
 
     # Method 2: Check raw event data for function calls
@@ -1771,7 +1893,7 @@ async def handle_voicelive_event(
             try:
                 parsed = json.loads(raw_data)
                 if parsed.get('type') == 'response.function_call_arguments.done':
-                    logger.info("🔧 Function call detected in raw event data")
+                    logger.info("?? Function call detected in raw event data")
                     function_name = parsed.get('name')
                     arguments = json.loads(parsed.get('arguments', '{}'))
                     call_id = parsed.get('call_id')
@@ -1786,7 +1908,7 @@ async def handle_voicelive_event(
                             try:
                                 feedback_msg = FUNCTION_FEEDBACK[function_name]
                                 await voicelive_connection.send_text(feedback_msg)
-                                logger.info(f"💬 Pre-function feedback: '{feedback_msg}' (Method 2)")
+                                logger.info(f"?? Pre-function feedback: '{feedback_msg}' (Method 2)")
                             except Exception as e:
                                 logger.warning(f"Failed to send pre-function feedback (Method 2): {e}")
 
@@ -1807,29 +1929,29 @@ async def handle_voicelive_event(
                                 }
                             }
 
-                            logger.info("📤 Sending function result via SDK send method (Method 2)...")
+                            logger.info("?? Sending function result via SDK send method (Method 2)...")
 
                             # Use the SDK's send method directly (send dict, not JSON string)
                             if hasattr(voicelive_connection, 'send'):
                                 await voicelive_connection.send(raw_message)
-                                logger.info("✅ Function result sent via connection.send() (Method 2)")
+                                logger.info("? Function result sent via connection.send() (Method 2)")
                             elif hasattr(voicelive_connection, '_connection') and hasattr(voicelive_connection._connection, 'send'):
                                 await voicelive_connection._connection.send(raw_message)
-                                logger.info("✅ Function result sent via _connection.send() (Method 2)")
+                                logger.info("? Function result sent via _connection.send() (Method 2)")
                             else:
                                 # Log available attributes for debugging
                                 attrs = [a for a in dir(voicelive_connection) if not a.startswith('__')]
-                                logger.error(f"⚠️ No send method found. Available: {attrs[:15]}")
+                                logger.error(f"?? No send method found. Available: {attrs[:15]}")
                                 raise AttributeError("Cannot access send method on connection")
 
                             # Trigger the next response so AI can speak the result
                             if hasattr(voicelive_connection, 'response'):
                                 await voicelive_connection.response.create()
-                                logger.info("✅ Triggered response.create() to continue conversation (Method 2)")
+                                logger.info("? Triggered response.create() to continue conversation (Method 2)")
 
                         except Exception as e:
                             # WebSocket bypass failed
-                            logger.error(f"❌ WebSocket bypass failed (Method 2): {e}")
+                            logger.error(f"? WebSocket bypass failed (Method 2): {e}")
                             logger.error(traceback.format_exc())
 
                             try:
@@ -1853,16 +1975,16 @@ async def handle_voicelive_event(
                                     await voicelive_connection.response.create(
                                         additional_instructions=recovery_prompt
                                     )
-                                    logger.info("✅ Triggered SDK response.create() for graceful tool failure recovery (Method 2).")
+                                    logger.info("? Triggered SDK response.create() for graceful tool failure recovery (Method 2).")
                             except Exception as recovery_e:
-                                logger.critical(f"❌ TOTAL FAILURE (Method 2): Could not send function result AND could not trigger recovery response: {recovery_e}")
+                                logger.critical(f"? TOTAL FAILURE (Method 2): Could not send function result AND could not trigger recovery response: {recovery_e}")
                                 logger.error(traceback.format_exc())
             except:
                 pass  # Not a function call event
 
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # DEBUG: Log all event types to discover what we're missing
-    # ──────────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------------
     # Log event details for debugging (helps find transcript events)
     event_type_str = str(event.type)
     if event_type_str not in [
@@ -1877,13 +1999,13 @@ async def handle_voicelive_event(
     ]:
         # Log unhandled events to discover new event types
         event_attrs = {k: v for k, v in event.__dict__.items() if not k.startswith('_')}
-        logger.info(f"🔍 Event type: {event_type_str}")
+        logger.info(f"?? Event type: {event_type_str}")
         if event_attrs:
             logger.info(f"   Attributes: {event_attrs}")
 
-# ──────────────────────────────────────────────────────────────────────────────
-# SIGNALWIRE → VOICE LIVE AUDIO FORWARDER
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
+# SIGNALWIRE ? VOICE LIVE AUDIO FORWARDER
+# ------------------------------------------------------------------------------
 async def send_signalwire_audio_to_voicelive(
     signalwire_ws: WebSocket,
     voicelive_connection,
@@ -1892,7 +2014,7 @@ async def send_signalwire_audio_to_voicelive(
     shared_state: Dict[str, Any],
     greeting_text: str
 ):
-    logger.info(f"🎤 Audio forwarding started for {company_name}")
+    logger.info(f"?? Audio forwarding started for {company_name}")
 
     stream_sid: Optional[str] = None
     call_session: Optional[CallSession] = None
@@ -1902,7 +2024,7 @@ async def send_signalwire_audio_to_voicelive(
             msg = await signalwire_ws.receive()
 
             if msg["type"] == "websocket.disconnect":
-                logger.info(f"📞 SignalWire disconnected for {company_name}")
+                logger.info(f"?? SignalWire disconnected for {company_name}")
                 break
 
             if "text" in msg and msg["text"] is not None:
@@ -1911,7 +2033,7 @@ async def send_signalwire_audio_to_voicelive(
                     event_name = data.get("event")
 
                     if event_name == "connected":
-                        logger.info(f"🔗 SignalWire connected for {company_name}")
+                        logger.info(f"?? SignalWire connected for {company_name}")
 
                     elif event_name == "start":
                         stream_sid = (data.get("start") or {}).get("streamSid")
@@ -1919,7 +2041,7 @@ async def send_signalwire_audio_to_voicelive(
                         media_format = start_data.get("mediaFormat", {})
 
                         # DEBUG: Log the full start event data
-                        logger.info(f"🔍 Start event data: streamSid={stream_sid}, from={start_data.get('from')}, customParameters={start_data.get('customParameters')}")
+                        logger.info(f"?? Start event data: streamSid={stream_sid}, from={start_data.get('from')}, customParameters={start_data.get('customParameters')}")
 
                         # Extract caller ID with priority:
                         # 1. Query parameters (for cXML compatibility: ?caller_id=xxx or ?from=xxx)
@@ -1938,14 +2060,14 @@ async def send_signalwire_audio_to_voicelive(
                         # Normalize caller ID to E.164 format
                         caller_phone = normalize_caller_id(raw_caller)
 
-                        logger.info(f"📞 Raw caller ID: {raw_caller}")
+                        logger.info(f"?? Raw caller ID: {raw_caller}")
                         if query_caller:
-                            logger.info(f"📞 Caller ID source: URL query parameter")
+                            logger.info(f"?? Caller ID source: URL query parameter")
                         elif custom_params.get("caller_id"):
-                            logger.info(f"📞 Caller ID source: SWML customParameters")
+                            logger.info(f"?? Caller ID source: SWML customParameters")
                         else:
-                            logger.info(f"📞 Caller ID source: SignalWire start.from")
-                        logger.info(f"📞 Normalized caller ID: {caller_phone}")
+                            logger.info(f"?? Caller ID source: SignalWire start.from")
+                        logger.info(f"?? Normalized caller ID: {caller_phone}")
 
                         # Create call session
                         call_session = CallSession(company_id, stream_sid or "unknown")
@@ -1955,9 +2077,9 @@ async def send_signalwire_audio_to_voicelive(
                         # Start cost tracking
                         cost_tracker.start_call_tracking(stream_sid or "unknown", company_id)
 
-                        logger.info(f"▶️ Call started for {company_name}")
-                        logger.info(f"📞 Caller ID: {caller_phone}")
-                        logger.info(f"📊 Audio format: {media_format}")
+                        logger.info(f"?? Call started for {company_name}")
+                        logger.info(f"?? Caller ID: {caller_phone}")
+                        logger.info(f"?? Audio format: {media_format}")
 
                         # Add business context
                         # Get business hours configuration for this company
@@ -1968,14 +2090,14 @@ async def send_signalwire_audio_to_voicelive(
                         open_time_str = business_hours_config.get('open-time', '08:30')
                         close_time_str = business_hours_config.get('close-time', '17:00')
 
-                        logger.info(f"⚙️ Business hours config: timezone={timezone_str}, days={business_days}, open={open_time_str}, close={close_time_str}")
+                        logger.info(f"?? Business hours config: timezone={timezone_str}, days={business_days}, open={open_time_str}, close={close_time_str}")
 
                         # Get current time in company's timezone (convert from UTC for reliability)
                         company_tz = pytz.timezone(timezone_str)
                         now_utc = datetime.now(UTC)
                         now_local = now_utc.astimezone(company_tz)
 
-                        logger.info(f"🕐 Current time - UTC: {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}, Local: {now_local.strftime('%Y-%m-%d %I:%M:%S %p %Z')}")
+                        logger.info(f"?? Current time - UTC: {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}, Local: {now_local.strftime('%Y-%m-%d %I:%M:%S %p %Z')}")
 
                         # Parse open and close times
                         open_hour, open_minute = map(int, open_time_str.split(':'))
@@ -2001,22 +2123,22 @@ async def send_signalwire_audio_to_voicelive(
                             in_hours_from_yesterday = previous_day in business_days and current_time_minutes < close_time_minutes
                             is_business_hours = in_hours_today or in_hours_from_yesterday
 
-                            logger.info(f"📅 Overnight hours detected: open={open_time_str}, close={close_time_str}")
-                            logger.info(f"📅 Business hours check: Day={now_local.strftime('%A')} ({current_day}), Time={now_local.strftime('%H:%M')}, in_hours_today={in_hours_today}, in_hours_from_yesterday={in_hours_from_yesterday}, is_business_hours={is_business_hours}")
+                            logger.info(f"?? Overnight hours detected: open={open_time_str}, close={close_time_str}")
+                            logger.info(f"?? Business hours check: Day={now_local.strftime('%A')} ({current_day}), Time={now_local.strftime('%H:%M')}, in_hours_today={in_hours_today}, in_hours_from_yesterday={in_hours_from_yesterday}, is_business_hours={is_business_hours}")
                         else:
                             # Standard hours (e.g., Mon 8am - Mon 5pm)
                             is_business_day = current_day in business_days
                             is_within_hours = open_time_minutes <= current_time_minutes < close_time_minutes
                             is_business_hours = is_business_day and is_within_hours
 
-                            logger.info(f"📅 Standard hours: Day={now_local.strftime('%A')} ({current_day}), Time={now_local.strftime('%H:%M')}, is_business_day={is_business_day}, is_within_hours={is_within_hours}, is_business_hours={is_business_hours}")
+                            logger.info(f"?? Standard hours: Day={now_local.strftime('%A')} ({current_day}), Time={now_local.strftime('%H:%M')}, is_business_day={is_business_day}, is_within_hours={is_within_hours}, is_business_hours={is_business_hours}")
                         
                         formatted_phone = caller_phone or "Unknown"
                         if caller_phone and len(caller_phone) == 12 and caller_phone.startswith('+1'):
                             # Strip the +1 country code - just send the 10 digits for easy reading
                             formatted_phone = caller_phone[2:]
 
-                        logger.info(f"📞 DEBUG FORMATTING: caller_phone='{caller_phone}', len={len(caller_phone) if caller_phone else 0}, formatted_phone='{formatted_phone}'")
+                        logger.info(f"?? DEBUG FORMATTING: caller_phone='{caller_phone}', len={len(caller_phone) if caller_phone else 0}, formatted_phone='{formatted_phone}'")
 
                         # Get timezone abbreviation for display (e.g., "EST", "PDT")
                         tz_abbrev = now_local.strftime('%Z')
@@ -2045,8 +2167,8 @@ Phone Number: {formatted_phone}
 Use the provided context as instructed in your main prompt.
 Follow all tool usage rules and call flow procedures exactly as specified."""
 
-                        logger.info(f"📤 Call context prepared")
-                        logger.info(f"📤 DEBUG FULL CONTEXT:\n{enhanced_context}")
+                        logger.info(f"?? Call context prepared")
+                        logger.info(f"?? DEBUG FULL CONTEXT:\n{enhanced_context}")
 
                         # Update session instructions with caller context using session.update()
                         # This is cleaner and more explicit than using additional_instructions
@@ -2056,7 +2178,7 @@ Follow all tool usage rules and call flow procedures exactly as specified."""
 
                         session_config = RequestSession(instructions=updated_instructions)
                         await voicelive_connection.session.update(session=session_config)
-                        logger.info("✅ Updated session with caller context via session.update()")
+                        logger.info("? Updated session with caller context via session.update()")
 
                         # Wait for audio stream to fully establish before greeting
                         await asyncio.sleep(1.5)
@@ -2064,7 +2186,7 @@ Follow all tool usage rules and call flow procedures exactly as specified."""
                         # Trigger greeting WITHOUT additional_instructions (context already in session)
                         await voicelive_connection.response.create()
                         shared_state["greeting_done"] = True  # Mark as done immediately
-                        logger.info("✅ Triggered greeting (context injected via session.update)")
+                        logger.info("? Triggered greeting (context injected via session.update)")
 
                     elif event_name == "media":
                         if not call_session:
@@ -2081,17 +2203,17 @@ Follow all tool usage rules and call flow procedures exactly as specified."""
                         # Direct forward - Voice Live API handles optimal chunking
                         try:
                             await voicelive_connection.input_audio_buffer.append(audio=payload)
-                            logger.debug("🔊 Forwarded audio")
+                            logger.debug("?? Forwarded audio")
                         except Exception as e:
                             logger.error(f"Audio forward error: {e}")
 
                     elif event_name == "stop":
-                        logger.info(f"⏹️ Call ended for {company_name}")
+                        logger.info(f"?? Call ended for {company_name}")
                         if call_session:
                             try:
                                 call_session.finalize()
                                 await call_session.save_to_storage()
-                                logger.info("✅ Call session saved successfully")
+                                logger.info("? Call session saved successfully")
 
                                 # Finalize and save cost tracking
                                 if stream_sid:
@@ -2111,16 +2233,20 @@ Follow all tool usage rules and call flow procedures exactly as specified."""
                     logger.error(traceback.format_exc())
 
     except asyncio.CancelledError:
-        logger.info(f"🛑 Audio forwarding cancelled for {company_name}")
+        logger.info(f"?? Audio forwarding cancelled for {company_name}")
     except WebSocketDisconnect:
-        logger.info(f"📞 WebSocket disconnected for {company_name}")
+        logger.info(f"?? WebSocket disconnected for {company_name}")
     except Exception as e:
-        logger.error(f"❌ Error in audio forwarding for {company_name}: {e}")
+        logger.error(f"? Error in audio forwarding for {company_name}: {e}")
         logger.error(traceback.format_exc())
     finally:
-        logger.info(f"🛑 Audio forwarding stopped for {company_name}")
+        logger.info(f"?? Audio forwarding stopped for {company_name}")
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+
+
