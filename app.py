@@ -324,6 +324,8 @@ class SessionMonitor:
         self.vad_triggers = 0
         self.errors = []
         self.last_token_warning = 0
+        self.invalid_token_count = 0
+        self.barge_in_count = 0
 
     def add_tokens(self, input_tokens: int, output_tokens: int):
         self.token_count += (input_tokens + output_tokens)
@@ -362,6 +364,12 @@ class SessionMonitor:
             'timestamp': datetime.now(UTC).isoformat()
         })
 
+    def add_invalid_token(self):
+        self.invalid_token_count += 1
+
+    def add_barge_in(self):
+        self.barge_in_count += 1
+
     def log_summary(self):
         duration = (datetime.now(UTC) - self.start_time).total_seconds()
         logger.info(f"""
@@ -371,6 +379,8 @@ class SessionMonitor:
    Tokens: {self.token_count:,} (~{self.token_count/128000:.1%} of limit)
    VAD Triggers: {self.vad_triggers}
    Function Calls: {len(self.function_calls)}
+   Barge-ins: {self.barge_in_count}
+   Invalid Tokens: {self.invalid_token_count}
    Errors: {len(self.errors)}
    Avg Turn Time: {duration/max(1, self.turn_count):.1f}s
         """)
@@ -1204,7 +1214,7 @@ async def voice_bridge(company_id: str, signalwire_ws: WebSocket):
 
 # Response tracking to detect and suppress audio-only responses (prevents <|audio_text|> token)
 INVALID_TOKEN_LITERALS = {"<|audio_text|>", "<|text_hbr_audio|>", "<|end_of_text|>"}
-AUDIO_VALIDATION_HOLD_SECONDS = 0.75  # Max time to buffer audio while waiting for safe transcript
+AUDIO_VALIDATION_HOLD_SECONDS = 2.0  # Max time to buffer audio while waiting for safe transcript - increased for safety
 AUDIO_BUFFER_MAX_CHUNKS = 48  # Safety cap to avoid unbounded buffering
 
 
@@ -1440,6 +1450,7 @@ async def handle_voicelive_event(
                 if response_tracker.add_transcript_delta(stripped_delta):
                     # Invalid token detected! Suppress audio and log
                     logger.error("🚨 INVALID TOKEN IN DELTA - Audio will be suppressed")
+                    monitor.add_invalid_token()  # Track for metrics
                     return
 
                 # Mark that we received clean assistant text and flush buffered audio
@@ -1602,6 +1613,7 @@ async def handle_voicelive_event(
             # v17.6: Check if this is REAL barge-in or normal turn-taking
             if call_session and call_session.agent_is_speaking:
                 logger.info("?? REAL BARGE-IN: Caller interrupting Sarah - executing cancellation")
+                monitor.add_barge_in()  # Track barge-in for metrics
 
                 # ------------------------------------------------------------------
                 # TRIPLE-ACTION BARGE-IN PATTERN (Distributed Cancellation)
@@ -1633,7 +1645,7 @@ async def handle_voicelive_event(
                         "item": {
                             "type": "message",
                             "role": "system",
-                            "content": [{"type": "input_text", "text": "SYSTEM: User interrupted. Stop previous task. Acknowledge and listen."}]
+                            "content": [{"type": "input_text", "text": "SYSTEM: User interrupted. Respond verbally with a brief acknowledgment and listen for their input."}]
                         }
                     }
 
