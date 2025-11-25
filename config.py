@@ -51,11 +51,17 @@ class ConfigManager:
             return None
 
         try:
-            # UPDATED: Use dustin_instructions_senior_life.md for Dustin voice agent
+            # Map company_id to instruction file names
             if company_id == "senior-life":
                 blob_name = "dustin_instructions_senior_life.md"
             elif company_id == "test-basic":
                 blob_name = "test_basic_instructions.md"
+            elif company_id == "client-229":
+                blob_name = "client_229-320-8638_instructions.md"
+            elif company_id == "client-551":
+                blob_name = "client_551-210-9249_instructions.md"
+            elif company_id == "client-701":
+                blob_name = "client_701-299-0872_instructions.md"
             else:
                 # Fallback pattern for other companies
                 blob_name = f"{company_id}-instructions.txt"
