@@ -200,15 +200,15 @@ az storage blob upload \
 
 **GitHub Actions uses:**
 - Service Principal: `voice-agents-github-deployer`
-- App ID: `964487a8-510b-4f8c-9e51-0bde7c2d76a1`
+- App ID: `<YOUR_CLIENT_ID>`
 - Role: Storage Blob Data Contributor
 - Scope: `/subscriptions/.../resourceGroups/voice_agents/providers/Microsoft.Storage/storageAccounts/voiceagentsinstructions`
 
 **To verify permissions:**
 ```bash
 az role assignment list \
-  --assignee 964487a8-510b-4f8c-9e51-0bde7c2d76a1 \
-  --scope /subscriptions/5b4df114-b699-49ae-bc50-babd8b9af6d4/resourceGroups/voice_agents/providers/Microsoft.Storage/storageAccounts/voiceagentsinstructions
+  --assignee <YOUR_CLIENT_ID> \
+  --scope /subscriptions/<YOUR_SUBSCRIPTION_ID>/resourceGroups/voice_agents/providers/Microsoft.Storage/storageAccounts/voiceagentsinstructions
 ```
 
 ---

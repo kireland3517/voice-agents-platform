@@ -13,10 +13,10 @@
 
 ```json
 {
-  "clientId": "964487a8-510b-4f8c-9e51-0bde7c2d76a1",
+  "clientId": "<YOUR_CLIENT_ID>",
   "clientSecret": "<YOUR_CLIENT_SECRET>",
-  "subscriptionId": "5b4df114-b699-49ae-bc50-babd8b9af6d4",
-  "tenantId": "b0dac3a1-29f5-490a-b841-bb2fa0674680",
+  "subscriptionId": "<YOUR_SUBSCRIPTION_ID>",
+  "tenantId": "<YOUR_TENANT_ID>",
   "activeDirectoryEndpointUrl": "https://login.microsoftonline.com",
   "resourceManagerEndpointUrl": "https://management.azure.com/",
   "activeDirectoryGraphResourceId": "https://graph.windows.net/",
